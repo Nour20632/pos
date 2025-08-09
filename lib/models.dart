@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 // ==================== MODÈLE UTILISATEUR ====================
 class User {
@@ -145,7 +146,9 @@ class Product {
       color: map['color'],
       size: map['size'],
       sellPrice: (map['sell_price'] as num).toDouble(),
-      costPrice: map['cost_price'] != null ? (map['cost_price'] as num).toDouble() : null,
+      costPrice: map['cost_price'] != null
+          ? (map['cost_price'] as num).toDouble()
+          : null,
       quantity: map['quantity'] ?? 0,
       minStockAlert: map['min_stock_alert'] ?? 5,
       description: map['description'],
@@ -1241,4 +1244,3 @@ class Cart extends ChangeNotifier {
     notifyListeners();
   }
 }
-  

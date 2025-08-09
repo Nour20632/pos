@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mk_optique/services/auth_service.dart';
 import 'package:provider/provider.dart';
 
 import '../constants.dart';
-import '../services.dart';
 import '../widgets/app_drawer.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -55,13 +55,7 @@ class SettingsScreen extends StatelessWidget {
             icon: Icons.print,
             title: 'Paramètres Imprimante',
             subtitle: 'Configuration de l\'imprimante',
-            onTap: () => context.go('/settings/printer'),
-          ),
-          _buildSettingsTile(
-            icon: Icons.bluetooth,
-            title: 'Connexion Bluetooth',
-            subtitle: 'Gérer les connexions Bluetooth',
-            onTap: () => _showBluetoothDialog(context),
+            onTap: () => context.push('/settings/printer'),
           ),
 
           const Divider(),
@@ -73,13 +67,13 @@ class SettingsScreen extends StatelessWidget {
               icon: Icons.people,
               title: 'Gestion Utilisateurs',
               subtitle: 'Ajouter/modifier les utilisateurs',
-              onTap: () => context.go('/settings/users'),
+              onTap: () => context.push('/settings/users'),
             ),
             _buildSettingsTile(
               icon: Icons.backup,
               title: 'Sauvegarde & Restauration',
               subtitle: 'Gérer les données',
-              onTap: () => context.go('/backup'),
+              onTap: () => context.push('/backup'),
             ),
             _buildSettingsTile(
               icon: Icons.storage,
@@ -285,74 +279,6 @@ class SettingsScreen extends StatelessWidget {
               );
             },
             child: const Text('Modifier'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showBluetoothDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Connexion Bluetooth'),
-        content: Consumer<PrinterService>(
-          builder: (context, printerService, child) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (printerService.isConnected)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.bluetooth_connected,
-                      color: AppColors.success,
-                    ),
-                    title: Text(
-                      printerService.connectedPrinter?.name ??
-                          'Imprimante connectée',
-                    ),
-                    trailing: TextButton(
-                      onPressed: () => printerService.disconnect(),
-                      child: const Text('Déconnecter'),
-                    ),
-                  )
-                else
-                  const ListTile(
-                    leading: Icon(
-                      Icons.bluetooth_disabled,
-                      color: AppColors.error,
-                    ),
-                    title: Text('Aucune imprimante connectée'),
-                  ),
-                const SizedBox(height: AppDimensions.paddingM),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.search),
-                  label: const Text('Rechercher Imprimantes'),
-                  onPressed: () => printerService.searchPrinters(),
-                ),
-                if (printerService.availablePrinters.isNotEmpty) ...[
-                  const SizedBox(height: AppDimensions.paddingM),
-                  const Text('Imprimantes disponibles:'),
-                  ...printerService.availablePrinters.map(
-                    (printer) => ListTile(
-                      title: Text(printer.name),
-                      subtitle: Text(printer.macAdress),
-                      trailing: TextButton(
-                        onPressed: () =>
-                            printerService.connectToPrinter(printer),
-                        child: const Text('Connecter'),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fermer'),
           ),
         ],
       ),

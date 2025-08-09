@@ -3,8 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:mk_optique/enhanced_printer_service.dart';
-import 'package:mk_optique/enhanced_scanner_service.dart';
 import 'package:mk_optique/models.dart';
 import 'package:mk_optique/screens/add_customer.dart';
 import 'package:mk_optique/screens/add_product.dart';
@@ -13,17 +11,25 @@ import 'package:mk_optique/screens/dashboard.dart';
 import 'package:mk_optique/screens/edit_method.dart';
 import 'package:mk_optique/screens/invoice.dart';
 import 'package:mk_optique/screens/login.dart';
-import 'package:mk_optique/screens/new_sale.dart'; // أضف هذا الاستيراد
+import 'package:mk_optique/screens/new_sale.dart';
 import 'package:mk_optique/screens/products.dart';
 import 'package:mk_optique/screens/sale.dart';
 import 'package:mk_optique/screens/screens.dart';
-import 'package:mk_optique/screens/stockManagement.dart';
+import 'package:mk_optique/screens/stock_management.dart';
+import 'package:mk_optique/services/auth_service.dart';
+import 'package:mk_optique/services/customer_service.dart';
+import 'package:mk_optique/services/invoice_service.dart';
+import 'package:mk_optique/services/prescription_service.dart';
+import 'package:mk_optique/services/product_service.dart';
+import 'package:mk_optique/services/report_service.dart';
+import 'package:mk_optique/services/scanner_service.dart';
+import 'package:mk_optique/services/service_manager.dart';
+import 'package:mk_optique/services/stock_service.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'database.dart';
-import 'services.dart';
 
 // Thème personnalisé de l'application
 class AppTheme {
@@ -101,9 +107,8 @@ class MKOptiquePOSApp extends StatelessWidget {
           create: (_) => PrescriptionService(databaseHelper),
         ),
         ChangeNotifierProvider(
-          create: (_) => UsbScannerService(databaseHelper),
+          create: (_) => MKOptiqueServiceManager(databaseHelper),
         ),
-        
       ],
       child: Consumer<AuthService>(
         builder: (context, authService, _) {

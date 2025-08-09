@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mk_optique/services/auth_service.dart';
 import 'package:provider/provider.dart';
-import '../services.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -412,9 +412,9 @@ class _LoginScreenState extends State<LoginScreen>
         final user = context.read<AuthService>().currentUser;
         // Navigation based on user role
         if (user?.role == 'employe') {
-          context.go('/seller-dashboard');
+          context.push('/seller-dashboard');
         } else {
-          context.go('/dashboard');
+          context.push('/dashboard');
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

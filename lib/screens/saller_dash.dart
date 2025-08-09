@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mk_optique/services/auth_service.dart';
 import 'package:provider/provider.dart';
 
-import '../services.dart';
-
+// Seller dashboard
 class SellerDashboardScreen extends StatefulWidget {
   const SellerDashboardScreen({super.key});
 
@@ -282,25 +282,36 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen>
         const SizedBox(height: 20),
         Row(
           children: [
-            // Nouvelle Vente
+            // Vente Produits
             Expanded(
               child: _buildActionCard(
-                'Nouvelle Vente',
-                'Commencer une nouvelle transaction',
+                'Vente Produits',
+                'Vente rapide produits',
                 Icons.shopping_cart_rounded,
                 const Color(0xFF059669),
-                () => context.go('/seller/new-sale'),
+                () => context.push('/vente-produits'),
               ),
             ),
             const SizedBox(width: 16),
-            // Voir Produits
+            // Vente Lunettes sur Ordonnance
             Expanded(
               child: _buildActionCard(
-                'Produits',
-                'Consulter le catalogue',
-                Icons.inventory_2_rounded,
+                'Vente Lunettes Ordonnance',
+                'Vente sur ordonnance',
+                Icons.visibility,
                 const Color(0xFF3B82F6),
-                () => context.go('/seller/products'),
+                () => context.push('/create-optical-order'),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Lunettes à fabriquer
+            Expanded(
+              child: _buildActionCard(
+                'Lunettes à fabriquer',
+                'Liste des lunettes à fabriquer',
+                Icons.assignment_turned_in,
+                const Color(0xFF8B5CF6),
+                () => context.push('/optical-order'),
               ),
             ),
           ],

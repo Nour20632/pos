@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mk_optique/services/printer_service.dart';
+import 'package:mk_optique/services/report_service.dart';
 import 'package:provider/provider.dart';
 
 import '../constants.dart';
-import '../services.dart';
 import '../widgets/app_drawer.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -200,8 +201,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              final printerService = context.read<PrinterService>();
-              if (!printerService.isConnected) {
+              final usbPrinterService = context.read<UsbPrinterService>();
+              if (!usbPrinterService.isConnected) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Aucune imprimante connectée')),
                 );
@@ -310,7 +311,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     'Analyse détaillée des ventes par période',
                     Icons.trending_up,
                     AppColors.success,
-                    () => context.go('/reports/sales'),
+                    () => context.push('/reports/sales'),
                   ),
 
                   _buildReportCard(
@@ -318,7 +319,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     'État actuel du stock et mouvements',
                     Icons.warehouse,
                     AppColors.secondary,
-                    () => context.go('/reports/stock'),
+                    () => context.push('/reports/stock'),
                   ),
 
                   _buildReportCard(
@@ -326,7 +327,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     'Bilan financier et analyse des profits',
                     Icons.account_balance,
                     AppColors.primary,
-                    () => context.go('/reports/financial'),
+                    () => context.push('/reports/financial'),
                   ),
 
                   _buildReportCard(

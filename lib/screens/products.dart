@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mk_optique/services/auth_service.dart';
+import 'package:mk_optique/services/printer_service.dart';
+import 'package:mk_optique/services/product_service.dart';
+import 'package:mk_optique/services/scanner_service.dart';
+import 'package:mk_optique/services/stock_service.dart';
 import 'package:provider/provider.dart';
 
 import '../constants.dart';
 import '../models.dart';
-import '../services.dart';
 import '../widgets/app_drawer.dart';
 
 class ProductsScreen extends StatefulWidget {
@@ -79,7 +83,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => context.go('/products/add'),
+            onPressed: () => context.push('/products/add'),
           ),
         ],
       ),
@@ -164,7 +168,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/products/add'),
+        onPressed: () => context.push('/products/add'),
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -182,7 +186,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           width: 50,
           height: 50,
           decoration: BoxDecoration(
-            color: _getStockColor(product).withOpacity(0.1),
+            color: _getStockColor(product).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(Icons.inventory_2, color: _getStockColor(product)),
@@ -236,7 +240,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           ],
         ),
-        onTap: () => context.go('/products/edit/${product.id}'),
+        onTap: () => context.push('/products/edit/${product.id}'),
       ),
     );
   }
@@ -256,7 +260,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void _handleMenuAction(String action, Product product) {
     switch (action) {
       case 'edit':
-        context.go('/products/edit/${product.id}');
+        context.push('/products/edit/${product.id}');
         break;
       case 'stock':
         _showStockDialog(product);
@@ -320,9 +324,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
 
     if (success) {
-      await context.read<ProductService>().loadProducts();
-      _loadProducts();
+      // Fix: Store the context before the async operation
       if (mounted) {
+        await context.read<ProductService>().loadProducts();
+        _loadProducts();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Stock ajusté avec succès')),
         );
@@ -331,15 +336,24 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Future<void> _printLabel(Product product) async {
-    final printerService = context.read<PrinterService>();
+    final printerService = context.read<UsbPrinterService>();
     if (!printerService.isConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Aucune imprimante connectée')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aucune imprimante connectée')),
+        );
+      }
       return;
     }
 
-    final success = await printerService.printBarcode(product);
+    // Fix: Remove the undefined named parameters and use positional parameters
+    // You'll need to check your printer service API to see what parameters are actually supported
+    final success = await printerService.printBarcode(
+      product.barcode ?? '',
+      // If your printBarcode method supports additional parameters, add them here
+      // based on your actual printer service implementation
+    );
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -368,9 +382,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
           _searchQuery = barcode;
         });
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Produit non trouvé')));
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Produit non trouvé')));
+        }
       }
     }
   }

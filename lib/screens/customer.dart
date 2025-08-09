@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mk_optique/models.dart';
-import 'package:mk_optique/services.dart';
+import 'package:mk_optique/services/customer_service.dart';
 import 'package:provider/provider.dart';
 
 class CustomersScreen extends StatefulWidget {

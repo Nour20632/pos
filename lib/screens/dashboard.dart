@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mk_optique/services/auth_service.dart';
+import 'package:mk_optique/services/report_service.dart';
 import 'package:provider/provider.dart';
 
 import '../constants.dart';
-import '../services.dart';
 import '../widgets/app_drawer.dart';
 
+// Admin dashboard
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -31,7 +33,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
-    _loadStats();
+    // Schedule after build
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadStats());
   }
 
   @override
@@ -478,7 +481,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: InkWell(
         onTap: () {
           HapticFeedback.lightImpact();
-          context.go(route);
+          context.push(route);
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
@@ -550,7 +553,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               ],
             ),
             TextButton(
-              onPressed: () => context.go('/reports'),
+              onPressed: () => context.push('/reports'),
               child: const Text('Voir tout'),
             ),
           ],
@@ -707,10 +710,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   void _handleMenuSelection(String value) {
     switch (value) {
       case 'profile':
-        context.go('/profile');
+        context.push('/profile');
         break;
       case 'settings':
-        context.go('/settings');
+        context.push('/settings');
         break;
       case 'logout':
         _logout();
@@ -756,6 +759,18 @@ class _DashboardScreenState extends State<DashboardScreen>
       'icon': Icons.shopping_cart_rounded,
       'color': AppColors.success,
       'route': '/sale/new',
+    },
+    {
+      'title': 'Vente Lunettes (Ordonnance)',
+      'icon': Icons.visibility,
+      'color': AppColors.info,
+      'route': '/create-optical-order',
+    },
+    {
+      'title': 'Lunettes à fabriquer',
+      'icon': Icons.assignment_turned_in,
+      'color': AppColors.secondary,
+      'route': '/optical-order',
     },
     {
       'title': 'Ajouter Produit',
