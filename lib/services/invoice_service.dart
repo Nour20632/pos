@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+
 import '../database.dart';
 import '../models.dart' as models;
 
@@ -97,7 +98,11 @@ class InvoiceService extends ChangeNotifier {
     return await _databaseHelper.generateInvoiceNumber();
   }
 
-  Future<bool> createInvoice(models.Cart cart, int userId, {models.Customer? customer, required int userId}) async {
+  Future<bool> createInvoice(
+    models.Cart cart,
+    int userId, {
+    models.Customer? customer,
+  }) async {
     if (cart.isEmpty) return false;
 
     try {
@@ -153,10 +158,6 @@ class InvoiceService extends ChangeNotifier {
     }
   }
 
-  Future<models.Invoice?> getInvoiceById(int id) async {
-    return await _databaseHelper.getInvoiceById(id);
-  }
-
   Future<models.Invoice?> getInvoiceByNumber(String invoiceNumber) async {
     try {
       return _invoices
@@ -166,6 +167,10 @@ class InvoiceService extends ChangeNotifier {
       debugPrint('Erreur recherche facture par numéro: $e');
       return null;
     }
+  }
+
+  Future<models.Invoice?> getInvoiceById(int id) async {
+    return await _databaseHelper.getInvoiceById(id);
   }
 
   Future<bool> addPayment(int invoiceId, models.Payment payment) async {

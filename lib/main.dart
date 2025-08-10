@@ -3,18 +3,20 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:mk_optique/models.dart';
 import 'package:mk_optique/screens/add_customer.dart';
 import 'package:mk_optique/screens/add_product.dart';
+import 'package:mk_optique/screens/create_optical_order_screen.dart';
 import 'package:mk_optique/screens/customer.dart';
 import 'package:mk_optique/screens/dashboard.dart';
-import 'package:mk_optique/screens/edit_method.dart';
-import 'package:mk_optique/screens/invoice.dart';
+import 'package:mk_optique/screens/edit_customer_screen.dart';
+import 'package:mk_optique/screens/invoice_detail_screen.dart';
+import 'package:mk_optique/screens/invoice_screen.dart';
 import 'package:mk_optique/screens/login.dart';
-import 'package:mk_optique/screens/new_sale.dart';
+import 'package:mk_optique/screens/new_sale_screen.dart';
+import 'package:mk_optique/screens/optical_orders_screen.dart';
 import 'package:mk_optique/screens/products.dart';
-import 'package:mk_optique/screens/sale.dart';
-import 'package:mk_optique/screens/screens.dart';
+import 'package:mk_optique/screens/report.dart';
+import 'package:mk_optique/screens/settings.dart';
 import 'package:mk_optique/screens/stock_management.dart';
 import 'package:mk_optique/services/auth_service.dart';
 import 'package:mk_optique/services/customer_service.dart';
@@ -30,6 +32,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'database.dart';
+import 'screens/edit_product_screen.dart';
+import 'screens/label_printing_screen.dart';
+import 'screens/saller_dash.dart';
 
 // Thème personnalisé de l'application
 class AppTheme {
@@ -37,10 +42,15 @@ class AppTheme {
     brightness: Brightness.light,
     primarySwatch: Colors.blue,
     fontFamily: GoogleFonts.roboto().fontFamily,
-    scaffoldBackgroundColor: Colors.white,
+    scaffoldBackgroundColor: const Color(0xFFF8FAFC),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.blue,
+      backgroundColor: Color(0xFF1E3A8A),
       foregroundColor: Colors.white,
+      elevation: 0,
+    ),
+    cardTheme: CardThemeData(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
   );
 
@@ -48,10 +58,11 @@ class AppTheme {
     brightness: Brightness.dark,
     primarySwatch: Colors.blue,
     fontFamily: GoogleFonts.roboto().fontFamily,
-    scaffoldBackgroundColor: Colors.black,
+    scaffoldBackgroundColor: const Color(0xFF0F172A),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.black,
+      backgroundColor: Color(0xFF1E293B),
       foregroundColor: Colors.white,
+      elevation: 0,
     ),
   );
 }
@@ -59,7 +70,7 @@ class AppTheme {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Ajout pour Windows/Linux/Mac (sqflite_common_ffi)
+  // Configuration pour Windows/Linux/Mac (sqflite_common_ffi)
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
 
@@ -123,8 +134,8 @@ class MKOptiquePOSApp extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            supportedLocales: const [Locale('fr', 'DZ'), Locale('ar', 'DZ')],
-            locale: const Locale('fr', 'DZ'),
+            supportedLocales: const [Locale('fr', 'FR'), Locale('ar', 'DZ')],
+            locale: const Locale('fr', 'FR'),
             routerConfig: _createRouter(authService),
           );
         },
@@ -140,158 +151,159 @@ class MKOptiquePOSApp extends StatelessWidget {
 
   GoRouter _createRouter(AuthService authService) {
     return GoRouter(
-      initialLocation: authService.isAuthenticated ? '/dashboard' : '/login',
+      initialLocation: '/login',
       redirect: (context, state) {
-        final isLoggedIn = authService.isAuthenticated;
-        final isGoingToLogin = state.uri.toString() == '/login';
+        final isAuthenticated = authService.isAuthenticated;
+        final isOnLoginPage = state.uri.path == '/login';
 
-        // Rediriger vers login si pas connecté
-        if (!isLoggedIn && !isGoingToLogin) {
+        // Si pas connecté et pas sur la page de connexion
+        if (!isAuthenticated && !isOnLoginPage) {
           return '/login';
         }
 
-        // Rediriger vers dashboard si connecté et sur login
-        if (isLoggedIn && isGoingToLogin) {
-          return '/dashboard';
+        // Si connecté et sur la page de connexion
+        if (isAuthenticated && isOnLoginPage) {
+          return authService.isProprietaire
+              ? '/dashboard'
+              : '/seller-dashboard';
         }
 
-        return null;
+        return null; // Aucune redirection
       },
       routes: <GoRoute>[
-        // Route de connexion
+        // Page de connexion
         GoRoute(
           path: '/login',
           builder: (context, state) => const LoginScreen(),
         ),
 
-        // Route principale - Dashboard
+        // Tableaux de bord
         GoRoute(
           path: '/dashboard',
           builder: (context, state) => const DashboardScreen(),
         ),
-
-        // Routes de vente
         GoRoute(
-          path: '/sale',
-          builder: (context, state) => OpticalSaleScreen(cart: Cart()),
+          path: '/seller-dashboard',
+          builder: (context, state) => const SellerDashboardScreen(),
         ),
 
-        GoRoute(
-          path: '/optical-sale',
-          builder: (context, state) {
-            final Map<String, dynamic> extra =
-                state.extra as Map<String, dynamic>;
-            return OpticalSaleScreen(
-              cart: extra['cart'] as Cart,
-              customer: extra['customer'] as Customer?,
-            );
-          },
-        ),
-
-        // البيع الجديد - إصلاح المسار
-        GoRoute(
-          path: '/sale/new',
-          builder: (context, state) => const NewSaleScreen(),
-        ),
-
-        // Routes produits
+        // Gestion des produits
         GoRoute(
           path: '/products',
           builder: (context, state) => const ProductsScreen(),
-        ),
-        GoRoute(
-          path: '/products/add',
-          builder: (context, state) => const AddProductScreen(),
-        ),
-        GoRoute(
-          path: '/products/edit/:id',
-          builder: (context, state) => EditProductScreen(
-            productId: int.parse(state.pathParameters['id']!),
-          ),
-        ),
-        GoRoute(
-          path: '/products/stock',
-          builder: (context, state) => const StockManagementScreen(),
-        ),
-        GoRoute(
-          path: '/products/labels',
-          builder: (context, state) => const LabelPrintingScreen(),
+          routes: [
+            GoRoute(
+              path: 'add',
+              builder: (context, state) => const AddProductScreen(),
+            ),
+            GoRoute(
+              path: 'edit/:id',
+              builder: (context, state) => EditProductScreen(
+                productId: int.parse(state.pathParameters['id']!),
+              ),
+            ),
+            GoRoute(
+              path: 'stock',
+              builder: (context, state) => const StockManagementScreen(),
+            ),
+            GoRoute(
+              path: 'labels',
+              builder: (context, state) => const LabelPrintingScreen(),
+            ),
+          ],
         ),
 
-        // Routes clients
+        // Gestion des clients
         GoRoute(
           path: '/customers',
           builder: (context, state) => const CustomersScreen(),
         ),
         GoRoute(
-          path: '/customers/add',
+          path: '/add-customer',
           builder: (context, state) => const AddCustomerScreen(),
         ),
         GoRoute(
-          path: '/customers/edit/:id',
+          path: '/edit-customer/:id',
           builder: (context, state) => EditCustomerScreen(
             customerId: int.parse(state.pathParameters['id']!),
           ),
         ),
 
-        // Routes prescriptions
+        // Ventes
         GoRoute(
-          path: '/prescriptions',
-          builder: (context, state) => const PrescriptionsScreen(),
-        ),
-        GoRoute(
-          path: '/prescriptions/add',
-          builder: (context, state) => const AddPrescriptionScreen(),
+          path: '/sale',
+          routes: [
+            GoRoute(
+              path: 'new',
+              builder: (context, state) => const NewSaleScreen(),
+            ),
+          ],
         ),
 
-        // Routes factures
+        // Factures
         GoRoute(
           path: '/invoices',
           builder: (context, state) => const InvoicesScreen(),
-        ),
-        GoRoute(
-          path: '/invoices/detail/:id',
-          builder: (context, state) => InvoiceDetailScreen(
-            invoiceId: int.parse(state.pathParameters['id']!),
-          ),
+          routes: [
+            GoRoute(
+              path: 'detail/:id',
+              builder: (context, state) => InvoiceDetailScreen(
+                invoiceId: int.parse(state.pathParameters['id']!),
+              ),
+            ),
+          ],
         ),
 
-        // Routes rapports
+        // Lunettes optiques
+        GoRoute(
+          path: '/optical-order',
+          builder: (context, state) => const OpticalOrdersScreen(),
+        ),
+        GoRoute(
+          path: '/create-optical-order',
+          builder: (context, state) => const CreateOpticalOrderScreen(),
+        ),
+        GoRoute(
+          path: '/vente-lunettes',
+          builder: (context, state) => const CreateOpticalOrderScreen(),
+        ),
+        GoRoute(
+          path: '/lunettes-a-fabriquer',
+          builder: (context, state) => const OpticalOrdersScreen(),
+        ),
+
+        // Rapports
         GoRoute(
           path: '/reports',
           builder: (context, state) => const ReportsScreen(),
         ),
-        GoRoute(
-          path: '/reports/sales',
-          builder: (context, state) => const SalesReportScreen(),
-        ),
-        GoRoute(
-          path: '/reports/stock',
-          builder: (context, state) => const StockReportScreen(),
-        ),
-        GoRoute(
-          path: '/reports/financial',
-          builder: (context, state) => const FinancialReportScreen(),
-        ),
 
-        // Routes paramètres
+        // Paramètres
         GoRoute(
           path: '/settings',
           builder: (context, state) => const SettingsScreen(),
-        ),
-        GoRoute(
-          path: '/settings/printer',
-          builder: (context, state) => const PrinterSettingsScreen(),
-        ),
-        GoRoute(
-          path: '/settings/users',
-          builder: (context, state) => const UsersManagementScreen(),
+          routes: [
+            GoRoute(
+              path: 'users',
+              builder: (context, state) => const UsersManagementScreen(),
+            ),
+            GoRoute(
+              path: 'profile',
+              builder: (context, state) => const ProfileScreen(),
+            ),
+          ],
         ),
 
-        // Route de sauvegarde/restauration
+        // Sauvegarde
         GoRoute(
           path: '/backup',
           builder: (context, state) => const BackupScreen(),
+        ),
+
+        // Profil utilisateur
+        GoRoute(
+          path: '/profile',
+          builder: (context, state) => const ProfileScreen(),
         ),
       ],
       errorBuilder: (context, state) => const ErrorScreen(),
@@ -299,71 +311,187 @@ class MKOptiquePOSApp extends StatelessWidget {
   }
 }
 
-// إنشاء wrapper للـ screens مع back button
-class AppScreenWrapper extends StatelessWidget {
-  final Widget child;
-  final String title;
-  final bool showBackButton;
-  final List<Widget>? actions;
-
-  const AppScreenWrapper({
-    super.key,
-    required this.child,
-    required this.title,
-    this.showBackButton = true,
-    this.actions,
-  });
+// Écrans manquants - À créer
+class UsersManagementScreen extends StatelessWidget {
+  const UsersManagementScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
-        backgroundColor: Colors.blue.shade800,
+        title: const Text('Gestion des Utilisateurs'),
+        backgroundColor: const Color(0xFF1E3A8A),
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: showBackButton,
-        leading: showBackButton
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.pop(),
-              )
-            : null,
-        actions: actions,
       ),
-      body: child,
+      body: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people_alt_rounded, size: 64, color: Color(0xFF6B7280)),
+            SizedBox(height: 16),
+            Text(
+              'Gestion des Utilisateurs',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF111827),
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Fonctionnalité en cours de développement',
+              style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-// Écran d'erreur personnalisé مع back button
+class BackupScreen extends StatelessWidget {
+  const BackupScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Sauvegarde'),
+        backgroundColor: const Color(0xFF1E3A8A),
+        foregroundColor: Colors.white,
+      ),
+      body: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.backup_rounded, size: 64, color: Color(0xFF6B7280)),
+            SizedBox(height: 16),
+            Text(
+              'Sauvegarde des Données',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF111827),
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Fonctionnalité en cours de développement',
+              style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ProfileScreen extends StatelessWidget {
+  const ProfileScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Profil Utilisateur'),
+        backgroundColor: const Color(0xFF1E3A8A),
+        foregroundColor: Colors.white,
+      ),
+      body: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.person_rounded, size: 64, color: Color(0xFF6B7280)),
+            SizedBox(height: 16),
+            Text(
+              'Profil Utilisateur',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF111827),
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Fonctionnalité en cours de développement',
+              style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Écran d'erreur personnalisé avec design moderne
 class ErrorScreen extends StatelessWidget {
   const ErrorScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return AppScreenWrapper(
-      title: 'Erreur',
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            const Text(
-              'Une erreur s\'est produite',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Veuillez redémarrer l\'application',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () => context.go('/dashboard'),
-              child: const Text('Retour au tableau de bord'),
-            ),
-          ],
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDC2626).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.error_outline_rounded,
+                  size: 64,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                'Erreur Application',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF111827),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Désolé, une erreur inattendue s\'est produite.\nVeuillez redémarrer l\'application.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF6B7280),
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                onPressed: () => context.go('/dashboard'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Retour au Tableau de Bord',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -376,39 +504,86 @@ class AppConfig {
   static const String version = '1.0.0';
   static const String companyName = 'MK OPTIQUE';
   static const String address =
-      'Rue Didouche Mourad\nà côté protection Civile el-hadjar';
+      'Rue Didouche Mourad\nà côté Protection Civile El-Hadjar';
   static const String phone = '06.63.90.47.96';
 }
 
-// Wrapper pour les écrans avec gestion du bouton de retour
-class AppWrapper extends StatelessWidget {
-  final Widget child;
-  const AppWrapper({super.key, required this.child});
+// Helper pour créer AppBar unifié
+class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String title;
+  final List<Widget>? actions;
+  final bool centerTitle;
+  final Widget? leading;
+
+  const CustomAppBar({
+    super.key,
+    required this.title,
+    this.actions,
+    this.centerTitle = true,
+    this.leading,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final router = GoRouter.of(context);
-    // Use routerState to get current location
-    final location = GoRouterState.of(context).uri.toString();
+    return AppBar(
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+      ),
+      backgroundColor: const Color(0xFF1E3A8A),
+      foregroundColor: Colors.white,
+      centerTitle: centerTitle,
+      elevation: 0,
+      actions: actions,
+      leading: leading,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(16),
+          bottomRight: Radius.circular(16),
+        ),
+      ),
+    );
+  }
 
-    if (location == '/login') {
-      return child;
-    }
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+}
 
-    return Stack(
-      children: [
-        child,
-        if (router.canPop())
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 10,
-            child: FloatingActionButton.small(
-              backgroundColor: Colors.black.withOpacity(0.7),
-              child: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => router.pop(),
-            ),
+// Helper pour créer cartes unifiées
+class CustomCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets? padding;
+  final EdgeInsets? margin;
+  final Color? color;
+
+  const CustomCard({
+    super.key,
+    required this.child,
+    this.padding,
+    this.margin,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: margin ?? const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color ?? Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-      ],
+        ],
+        border: Border.all(color: Colors.grey.withOpacity(0.1)),
+      ),
+      child: Padding(
+        padding: padding ?? const EdgeInsets.all(16),
+        child: child,
+      ),
     );
   }
 }

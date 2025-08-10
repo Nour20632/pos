@@ -200,7 +200,7 @@ class ScannerService extends ChangeNotifier {
           )
           .toList();
     } catch (e) {
-      print('Error searching scanners: $e');
+      debugPrint('Error searching scanners: $e');
       return [];
     }
   }
@@ -218,7 +218,7 @@ class ScannerService extends ChangeNotifier {
 
       return _isConnected;
     } catch (e) {
-      print('Error connecting to scanner: $e');
+      debugPrint('Error connecting to scanner: $e');
       return false;
     }
   }
@@ -230,7 +230,7 @@ class ScannerService extends ChangeNotifier {
       _connectedDevice = null;
       notifyListeners();
     } catch (e) {
-      print('Error disconnecting scanner: $e');
+      debugPrint('Error disconnecting scanner: $e');
     }
   }
 

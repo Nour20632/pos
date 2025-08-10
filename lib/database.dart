@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:mk_optique/optical_models.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -12,7 +13,8 @@ import 'models.dart';
 
 class DatabaseHelper {
   static const String _databaseName = 'MK_optique.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion =
+      1; // Version unique pour tout créer d'un coup
 
   Database? _database;
 
@@ -35,7 +37,6 @@ class DatabaseHelper {
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
       onOpen: _onOpen,
     );
   }
@@ -50,19 +51,12 @@ class DatabaseHelper {
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    await _createTables(db);
+    await _createAllTables(db);
     await _insertInitialData(db);
+    await _createAllIndexes(db);
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migration de la base de données selon les versions
-    if (oldVersion < newVersion) {
-      // Exemple de migration future
-      // await _upgradeToVersion2(db);
-    }
-  }
-
-  Future<void> _createTables(Database db) async {
+  Future<void> _createAllTables(Database db) async {
     // Table des utilisateurs
     await db.execute('''
       CREATE TABLE users (
@@ -88,7 +82,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Table des produits
+    // Table des produits (avec prix crédit inclus)
     await db.execute('''
       CREATE TABLE products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,6 +94,7 @@ class DatabaseHelper {
         color TEXT,
         size TEXT,
         sell_price REAL NOT NULL,
+        credit_price REAL,
         cost_price REAL,
         quantity INTEGER NOT NULL DEFAULT 0,
         min_stock_alert INTEGER DEFAULT 5,
@@ -146,7 +141,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Table des factures
+    // Table des factures (avec système de crédit inclus)
     await db.execute('''
       CREATE TABLE invoices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,6 +151,9 @@ class DatabaseHelper {
         customer_phone TEXT,
         invoice_type TEXT DEFAULT 'vente' CHECK (invoice_type IN ('vente', 'devis', 'retour')),
         payment_type TEXT DEFAULT 'comptant' CHECK (payment_type IN ('comptant', 'credit', 'mixte')),
+        is_credit_sale INTEGER DEFAULT 0,
+        credit_duration_months INTEGER,
+        monthly_payment REAL,
         subtotal REAL NOT NULL DEFAULT 0,
         discount_amount REAL DEFAULT 0,
         tax_amount REAL DEFAULT 0,
@@ -172,7 +170,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Table des détails de factures
+    // Table des détails de factures (avec crédit inclus)
     await db.execute('''
       CREATE TABLE invoice_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,6 +180,7 @@ class DatabaseHelper {
         product_barcode TEXT,
         quantity INTEGER NOT NULL,
         unit_price REAL NOT NULL,
+        is_credit_sale INTEGER DEFAULT 0,
         discount_amount REAL DEFAULT 0,
         total_price REAL NOT NULL,
         has_prescription INTEGER DEFAULT 0,
@@ -239,6 +238,152 @@ class DatabaseHelper {
       )
     ''');
 
+    // Table des contrats de crédit
+    await db.execute('''
+      CREATE TABLE credit_contracts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contract_number TEXT UNIQUE NOT NULL,
+        invoice_id INTEGER,
+        customer_id INTEGER NOT NULL,
+        total_amount REAL NOT NULL,
+        down_payment REAL DEFAULT 0,
+        financed_amount REAL NOT NULL,
+        duration_months INTEGER NOT NULL,
+        monthly_payment REAL NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        status TEXT DEFAULT 'actif' CHECK (status IN ('actif', 'termine', 'annule', 'en_retard')),
+        notes TEXT,
+        user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE CASCADE,
+        FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Table des échéances de crédit
+    await db.execute('''
+      CREATE TABLE credit_installments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        credit_contract_id INTEGER,
+        installment_number INTEGER NOT NULL,
+        due_date TEXT NOT NULL,
+        amount REAL NOT NULL,
+        paid_amount REAL DEFAULT 0,
+        remaining_amount REAL NOT NULL,
+        status TEXT DEFAULT 'en_attente' CHECK (status IN ('en_attente', 'paye', 'partiel', 'en_retard')),
+        payment_date TEXT,
+        payment_method TEXT CHECK (payment_method IN ('especes', 'carte', 'cheque', 'virement')),
+        notes TEXT,
+        user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (credit_contract_id) REFERENCES credit_contracts (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Table des paiements d'échéances
+    await db.execute('''
+      CREATE TABLE installment_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        installment_id INTEGER,
+        amount REAL NOT NULL,
+        payment_method TEXT NOT NULL CHECK (payment_method IN ('especes', 'carte', 'cheque', 'virement')),
+        payment_date TEXT DEFAULT CURRENT_TIMESTAMP,
+        reference_number TEXT,
+        notes TEXT,
+        user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (installment_id) REFERENCES credit_installments (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Table de l'historique des statuts de crédit
+    await db.execute('''
+      CREATE TABLE credit_status_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        credit_contract_id INTEGER,
+        old_status TEXT,
+        new_status TEXT,
+        reason TEXT,
+        user_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (credit_contract_id) REFERENCES credit_contracts (id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Table des commandes optiques
+    await db.execute('''
+      CREATE TABLE optical_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_number TEXT UNIQUE NOT NULL,
+        customer_id INTEGER NOT NULL,
+        prescription_id INTEGER,
+        invoice_id INTEGER,
+        
+        -- Informations de base
+        frame_reference TEXT,
+        lens_type TEXT,
+        special_notes TEXT,
+        
+        -- Prix et coûts
+        estimated_price REAL DEFAULT 0,
+        final_price REAL DEFAULT 0,
+        cost_price REAL DEFAULT 0,
+        
+        -- Statut
+        status TEXT DEFAULT 'nouveau' CHECK (status IN (
+          'nouveau', 'en_cours', 'pret', 'livre', 'annule'
+        )),
+        
+        -- Dates importantes
+        order_date TEXT DEFAULT CURRENT_TIMESTAMP,
+        estimated_delivery TEXT,
+        completion_date TEXT,
+        delivery_date TEXT,
+        
+        -- Utilisateurs
+        created_by INTEGER,
+        technician_id INTEGER,
+        
+        FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE,
+        FOREIGN KEY (prescription_id) REFERENCES prescriptions (id) ON DELETE SET NULL,
+        FOREIGN KEY (invoice_id) REFERENCES invoices (id) ON DELETE SET NULL,
+        FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+        FOREIGN KEY (technician_id) REFERENCES users (id) ON DELETE SET NULL
+      )
+    ''');
+
+    // Table de l'historique des commandes optiques
+    await db.execute('''
+      CREATE TABLE optical_order_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        optical_order_id INTEGER,
+        old_status TEXT,
+        new_status TEXT,
+        notes TEXT,
+        changed_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (optical_order_id) REFERENCES optical_orders (id) ON DELETE CASCADE,
+        FOREIGN KEY (changed_by) REFERENCES users (id) ON DELETE SET NULL
+      )
+    ''');
+
+    // Table pour les types de verres
+    await db.execute('''
+      CREATE TABLE lens_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        base_price REAL DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
+
     // Table des paramètres d'imprimante
     await db.execute('''
       CREATE TABLE printer_settings (
@@ -265,97 +410,89 @@ class DatabaseHelper {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
-
-    // Création des index pour optimiser les performances
-    await _createIndexes(db);
   }
 
-  Future<void> _createIndexes(Database db) async {
-    // Index sur les codes-barres des produits
-    await db.execute('CREATE INDEX idx_products_barcode ON products(barcode)');
-
-    // Index sur les numéros de facture
+  Future<void> _createAllIndexes(Database db) async {
+    // Index pour les produits
     await db.execute(
-      'CREATE INDEX idx_invoices_number ON invoices(invoice_number)',
+      'CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id)',
     );
 
-    // Index sur les dates de création
+    // Index pour les factures
     await db.execute(
-      'CREATE INDEX idx_invoices_created_at ON invoices(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number)',
     );
     await db.execute(
-      'CREATE INDEX idx_stock_movements_created_at ON stock_movements(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id)',
     );
 
-    // Index sur les clients
-    await db.execute('CREATE INDEX idx_customers_phone ON customers(phone)');
+    // Index pour les mouvements de stock
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements(created_at)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)',
+    );
 
-    // Index sur les relations
+    // Index pour les clients
     await db.execute(
-      'CREATE INDEX idx_products_category ON products(category_id)',
+      'CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone)',
+    );
+
+    // Index pour le système de crédit
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_credit_contracts_customer ON credit_contracts(customer_id)',
     );
     await db.execute(
-      'CREATE INDEX idx_invoice_items_invoice ON invoice_items(invoice_id)',
+      'CREATE INDEX IF NOT EXISTS idx_credit_contracts_status ON credit_contracts(status)',
     );
     await db.execute(
-      'CREATE INDEX idx_stock_movements_product ON stock_movements(product_id)',
+      'CREATE INDEX IF NOT EXISTS idx_credit_installments_contract ON credit_installments(credit_contract_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_credit_installments_due_date ON credit_installments(due_date)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_credit_installments_status ON credit_installments(status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_installment_payments_installment ON installment_payments(installment_id)',
+    );
+
+    // Index pour les commandes optiques
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_optical_orders_customer ON optical_orders(customer_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_optical_orders_status ON optical_orders(status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_optical_orders_technician ON optical_orders(technician_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_optical_orders_delivery ON optical_orders(estimated_delivery)',
     );
   }
 
   Future<void> _insertInitialData(Database db) async {
-    // Données initiales des catégories
-    final categories = [
-      "('Verres de Vue', 'Verres correcteurs pour lunettes de vue')",
-      "('Verres Solaires', 'Verres teintés et de soleil')",
-      "('Montures Vue', 'Montures pour lunettes de vue')",
-      "('Montures Solaires', 'Montures pour lunettes de soleil')",
-      "('Lentilles', 'Lentilles de contact')",
-      "('Accessoires', 'Étuis, chiffons, cordons, etc.')",
-      "('Montres', 'Montres diverses')",
-      "('Réparations', 'Services de réparation')",
-    ];
-
-    for (String category in categories) {
-      await db.execute(
-        'INSERT INTO categories (name, description) VALUES $category',
-      );
-    }
-
-    // Utilisateur administrateur par défaut
-    final hashedPassword = _hashPassword('admin123');
+    // Utilisateur propriétaire
+    final hashedOwnerPassword = _hashPassword('proprietaire123');
     await db.execute('''
       INSERT INTO users (username, password, role, full_name) 
-      VALUES ('admin', '$hashedPassword', 'proprietaire', 'Administrateur MK')
+      VALUES ('proprietaire', '$hashedOwnerPassword', 'proprietaire', 'Propriétaire MK')
     ''');
 
-    // ==== إضافة حساب بائع افتراضي ====
+    // Utilisateur vendeur
     final hashedSellerPassword = _hashPassword('vendeur123');
     await db.execute('''
       INSERT INTO users (username, password, role, full_name) 
-      VALUES ('vendeur', '$hashedSellerPassword', 'employe', 'vendeur')
-    ''');
-
-    // Paramètres d'imprimante par défaut
-    await db.execute('''
-      INSERT INTO printer_settings (printer_name, printer_type, paper_width, is_default) 
-      VALUES ('Smart Thermal Printer', 'bluetooth', 80, 1)
-    ''');
-
-    // Templates d'impression par défaut
-    await db.execute('''
-      INSERT INTO print_templates (template_name, template_type, header_text, footer_text, is_default) 
-      VALUES (
-        'Facture MK',
-        'facture', 
-        'MK OPTIQUE\nRue Didouche Mourad\nà côté protection Civile el-hadjar\nMOB: 06.63.90.47.96', 
-        'Toute commande confirmée ne pourra être annulée\npassé le délai de 03 Mois la maison\ndécline toute responsabilité', 
-        1
-      )
-    ''');
-
-    await db.execute('''
-      INSERT INTO print_templates (template_name, template_type, header_text, footer_text, is_default) 
-      VALUES ('Étiquette Produit', 'etiquette', 'MK OPTIQUE', '', 1)
+      VALUES ('vendeur', '$hashedSellerPassword', 'employe', 'Vendeur MK')
     ''');
   }
 
@@ -368,7 +505,292 @@ class DatabaseHelper {
   bool _verifyPassword(String password, String hashedPassword) {
     return _hashPassword(password) == hashedPassword;
   }
+Future<Map<String, dynamic>> getOpticalStats() async {
+    final db = await database;
+    final today = DateTime.now().toIso8601String().split('T')[0];
 
+    // Commandes par statut
+    final statusStats = await db.rawQuery('''
+    SELECT status, COUNT(*) as count
+    FROM optical_orders
+    GROUP BY status
+  ''');
+
+    // Commandes du jour
+    final todayOrders = await db.rawQuery(
+      '''
+    SELECT COUNT(*) as count
+    FROM optical_orders
+    WHERE DATE(order_date) = ?
+  ''',
+      [today],
+    );
+
+    // Commandes prêtes pour livraison
+    final readyOrders = await db.rawQuery('''
+    SELECT COUNT(*) as count
+    FROM optical_orders
+    WHERE status = 'pret'
+  ''');
+
+    // Commandes en retard (estimation dépassée)
+    final overdueOrders = await db.rawQuery(
+      '''
+    SELECT COUNT(*) as count
+    FROM optical_orders
+    WHERE estimated_delivery < ? AND status NOT IN ('livre', 'annule')
+  ''',
+      [today],
+    );
+
+    return {
+      'statusStats': statusStats,
+      'todayOrdersCount': todayOrders.first['count'],
+      'readyOrdersCount': readyOrders.first['count'],
+      'overdueOrdersCount': overdueOrders.first['count'],
+    };
+  }
+  // ==================== MÉTHODES POUR LES COMMANDES OPTIQUES ====================
+
+  Future<String> generateOpticalOrderNumber() async {
+    final db = await database;
+    final now = DateTime.now();
+    final year = now.year.toString().substring(2);
+    final month = now.month.toString().padLeft(2, '0');
+
+    final count = await db.rawQuery(
+      '''
+    SELECT COUNT(*) as count FROM optical_orders 
+    WHERE order_number LIKE ?
+  ''',
+      ['OPT$year$month%'],
+    );
+
+    final nextNumber = (count.first['count'] as int) + 1;
+    return 'OPT$year$month${nextNumber.toString().padLeft(4, '0')}';
+  }
+
+  Future<int> insertOpticalOrder(OpticalOrder order) async {
+    final db = await database;
+    final orderMap = order.toMap();
+    orderMap.remove('id');
+
+    return await db.transaction((txn) async {
+      final orderId = await txn.insert('optical_orders', orderMap);
+
+      // Ajouter à l'historique
+      await txn.insert('optical_order_history', {
+        'optical_order_id': orderId,
+        'old_status': null,
+        'new_status': order.status,
+        'notes': 'Commande créée',
+        'changed_by': order.createdBy,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      return orderId;
+    });
+  }
+
+  Future<List<OpticalOrder>> getAllOpticalOrders({
+    String? status,
+    int? technicianId,
+    int? customerId,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final db = await database;
+    String whereClause = '';
+    List<dynamic> whereArgs = [];
+
+    if (status != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'oo.status = ?';
+      whereArgs.add(status);
+    }
+
+    if (technicianId != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'oo.technician_id = ?';
+      whereArgs.add(technicianId);
+    }
+
+    if (customerId != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'oo.customer_id = ?';
+      whereArgs.add(customerId);
+    }
+
+    if (startDate != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'oo.order_date >= ?';
+      whereArgs.add(startDate.toIso8601String());
+    }
+
+    if (endDate != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'oo.order_date <= ?';
+      whereArgs.add(endDate.toIso8601String());
+    }
+
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+    SELECT oo.*, 
+           c.name as customer_name,
+           c.phone as customer_phone,
+           t.full_name as technician_name,
+           u.full_name as created_by_name,
+           i.invoice_number
+    FROM optical_orders oo
+    LEFT JOIN customers c ON oo.customer_id = c.id
+    LEFT JOIN users t ON oo.technician_id = t.id
+    LEFT JOIN users u ON oo.created_by = u.id
+    LEFT JOIN invoices i ON oo.invoice_id = i.id
+    $whereClause
+    ORDER BY oo.order_date DESC
+  ''', whereArgs);
+
+    return maps.map((map) => OpticalOrder.fromMap(map)).toList();
+  }
+
+  Future<OpticalOrder?> getOpticalOrderById(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+    SELECT oo.*, 
+           c.name as customer_name,
+           c.phone as customer_phone,
+           t.full_name as technician_name,
+           u.full_name as created_by_name,
+           i.invoice_number,
+           p.od_sphere, p.od_cylinder, p.od_axis, p.od_add,
+           p.os_sphere, p.os_cylinder, p.os_axis, p.os_add,
+           p.pd_total, p.pd_right, p.pd_left
+    FROM optical_orders oo
+    LEFT JOIN customers c ON oo.customer_id = c.id
+    LEFT JOIN users t ON oo.technician_id = t.id
+    LEFT JOIN users u ON oo.created_by = u.id
+    LEFT JOIN invoices i ON oo.invoice_id = i.id
+    LEFT JOIN prescriptions p ON oo.prescription_id = p.id
+    WHERE oo.id = ?
+  ''',
+      [id],
+    );
+
+    if (maps.isNotEmpty) {
+      return OpticalOrder.fromMap(maps.first);
+    }
+    return null;
+  }
+
+  Future<void> updateOpticalOrderStatus(
+    int orderId,
+    String newStatus,
+    String? notes,
+    int? userId,
+  ) async {
+    final db = await database;
+
+    await db.transaction((txn) async {
+      // Récupérer l'ancien statut
+      final oldStatusResult = await txn.query(
+        'optical_orders',
+        columns: ['status'],
+        where: 'id = ?',
+        whereArgs: [orderId],
+      );
+
+      if (oldStatusResult.isNotEmpty) {
+        final oldStatus = oldStatusResult.first['status'] as String;
+
+        // Mettre à jour le statut
+        final updateData = {'status': newStatus};
+
+        // Ajouter les dates selon le statut
+        switch (newStatus) {
+          case 'en_cours':
+            updateData['started_at'] = DateTime.now().toIso8601String();
+            break;
+          case 'pret':
+            updateData['completion_date'] = DateTime.now().toIso8601String();
+            break;
+          case 'livre':
+            updateData['delivery_date'] = DateTime.now().toIso8601String();
+            break;
+        }
+
+        await txn.update(
+          'optical_orders',
+          updateData,
+          where: 'id = ?',
+          whereArgs: [orderId],
+        );
+
+        // Ajouter à l'historique
+        await txn.insert('optical_order_history', {
+          'optical_order_id': orderId,
+          'old_status': oldStatus,
+          'new_status': newStatus,
+          'notes': notes,
+          'changed_by': userId,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    });
+  }
+
+  Future<void> updateOpticalOrderPrice(
+    int orderId,
+    double finalPrice,
+    double? costPrice,
+    int? userId,
+  ) async {
+    final db = await database;
+    await db.update(
+      'optical_orders',
+      {
+        'final_price': finalPrice,
+        'cost_price': costPrice,
+        'updated_by': userId,
+      },
+      where: 'id = ?',
+      whereArgs: [orderId],
+    );
+  }
+
+  Future<void> assignTechnician(int orderId, int technicianId) async {
+    final db = await database;
+    await db.update(
+      'optical_orders',
+      {'technician_id': technicianId},
+      where: 'id = ?',
+      whereArgs: [orderId],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getOpticalOrderHistory(int orderId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+    SELECT oh.*, u.full_name as changed_by_name
+    FROM optical_order_history oh
+    LEFT JOIN users u ON oh.changed_by = u.id
+    WHERE oh.optical_order_id = ?
+    ORDER BY oh.created_at DESC
+  ''',
+      [orderId],
+    );
+    return maps;
+  }
+
+  Future<List<LensType>> getAllLensTypes() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'lens_types',
+      where: 'is_active = 1',
+      orderBy: 'name',
+    );
+    return maps.map((map) => LensType.fromMap(map)).toList();
+  }
   // ==================== MÉTHODES UTILISATEURS ====================
   Future<User?> authenticateUser(String username, String password) async {
     final db = await database;
@@ -837,9 +1259,103 @@ class DatabaseHelper {
           }
         }
       }
+
+      // Si c'est une vente à crédit, créer le contrat de crédit
+      if (invoice.isCreditSale &&
+          invoice.creditDurationMonths != null &&
+          invoice.monthlyPayment != null) {
+        await _createCreditContract(txn, invoiceId, invoice);
+      }
     });
 
     return invoiceId;
+  }
+
+  Future<void> _createCreditContract(
+    Transaction txn,
+    int invoiceId,
+    Invoice invoice,
+  ) async {
+    final contractNumber = await _generateCreditContractNumber(txn);
+    final startDate = DateTime.now();
+    final endDate = DateTime(
+      startDate.year,
+      startDate.month + invoice.creditDurationMonths!,
+      startDate.day,
+    );
+
+    final contractMap = {
+      'contract_number': contractNumber,
+      'invoice_id': invoiceId,
+      'customer_id': invoice.customerId,
+      'total_amount': invoice.totalAmount,
+      'down_payment': invoice.paidAmount,
+      'financed_amount': invoice.remainingAmount,
+      'duration_months': invoice.creditDurationMonths,
+      'monthly_payment': invoice.monthlyPayment,
+      'start_date': startDate.toIso8601String().split('T')[0],
+      'end_date': endDate.toIso8601String().split('T')[0],
+      'status': 'actif',
+      'user_id': invoice.userId,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    final contractId = await txn.insert('credit_contracts', contractMap);
+
+    // Créer les échéances
+    await _createInstallments(
+      txn,
+      contractId,
+      startDate,
+      invoice.creditDurationMonths!,
+      invoice.monthlyPayment!,
+    );
+  }
+
+  Future<String> _generateCreditContractNumber(Transaction txn) async {
+    final now = DateTime.now();
+    final year = now.year.toString().substring(2);
+    final month = now.month.toString().padLeft(2, '0');
+
+    final count = await txn.rawQuery(
+      '''
+      SELECT COUNT(*) as count FROM credit_contracts 
+      WHERE contract_number LIKE ?
+    ''',
+      ['C$year$month%'],
+    );
+
+    final nextNumber = (count.first['count'] as int) + 1;
+    return 'C$year$month${nextNumber.toString().padLeft(4, '0')}';
+  }
+
+  Future<void> _createInstallments(
+    Transaction txn,
+    int contractId,
+    DateTime startDate,
+    int durationMonths,
+    double monthlyPayment,
+  ) async {
+    for (int i = 1; i <= durationMonths; i++) {
+      final dueDate = DateTime(
+        startDate.year,
+        startDate.month + i,
+        startDate.day,
+      );
+
+      final installmentMap = {
+        'credit_contract_id': contractId,
+        'installment_number': i,
+        'due_date': dueDate.toIso8601String().split('T')[0],
+        'amount': monthlyPayment,
+        'paid_amount': 0.0,
+        'remaining_amount': monthlyPayment,
+        'status': 'en_attente',
+        'created_at': DateTime.now().toIso8601String(),
+      };
+
+      await txn.insert('credit_installments', installmentMap);
+    }
   }
 
   Future<List<Invoice>> getAllInvoices({
@@ -986,6 +1502,353 @@ class DatabaseHelper {
     );
   }
 
+  // ==================== MÉTHODES CONTRATS DE CRÉDIT ====================
+  Future<List<CreditContract>> getAllCreditContracts({
+    CreditStatus? status,
+    int? customerId,
+    DateTime? startDate,
+    DateTime? endDate,
+    int limit = 100,
+  }) async {
+    final db = await database;
+    String whereClause = '';
+    List<dynamic> whereArgs = [];
+
+    if (status != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'cc.status = ?';
+      whereArgs.add(status.name);
+    }
+
+    if (customerId != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'cc.customer_id = ?';
+      whereArgs.add(customerId);
+    }
+
+    if (startDate != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'cc.created_at >= ?';
+      whereArgs.add(startDate.toIso8601String());
+    }
+
+    if (endDate != null) {
+      whereClause += whereClause.isEmpty ? 'WHERE ' : ' AND ';
+      whereClause += 'cc.created_at <= ?';
+      whereArgs.add(endDate.toIso8601String());
+    }
+
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT cc.*, 
+             c.name as customer_name,
+             i.invoice_number,
+             u.full_name as user_name
+      FROM credit_contracts cc
+      LEFT JOIN customers c ON cc.customer_id = c.id
+      LEFT JOIN invoices i ON cc.invoice_id = i.id
+      LEFT JOIN users u ON cc.user_id = u.id
+      $whereClause
+      ORDER BY cc.created_at DESC
+      LIMIT $limit
+    ''', whereArgs);
+
+    return maps.map((map) => CreditContract.fromMap(map)).toList();
+  }
+
+  Future<CreditContract?> getCreditContractById(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT cc.*, 
+             c.name as customer_name,
+             i.invoice_number,
+             u.full_name as user_name
+      FROM credit_contracts cc
+      LEFT JOIN customers c ON cc.customer_id = c.id
+      LEFT JOIN invoices i ON cc.invoice_id = i.id
+      LEFT JOIN users u ON cc.user_id = u.id
+      WHERE cc.id = ?
+    ''',
+      [id],
+    );
+
+    if (maps.isNotEmpty) {
+      return CreditContract.fromMap(maps.first);
+    }
+    return null;
+  }
+
+  Future<List<CreditContract>> getCustomerCreditContracts(
+    int customerId,
+  ) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT cc.*, 
+             c.name as customer_name,
+             i.invoice_number,
+             u.full_name as user_name
+      FROM credit_contracts cc
+      LEFT JOIN customers c ON cc.customer_id = c.id
+      LEFT JOIN invoices i ON cc.invoice_id = i.id
+      LEFT JOIN users u ON cc.user_id = u.id
+      WHERE cc.customer_id = ?
+      ORDER BY cc.created_at DESC
+    ''',
+      [customerId],
+    );
+
+    return maps.map((map) => CreditContract.fromMap(map)).toList();
+  }
+
+  Future<void> updateCreditContractStatus(
+    int contractId,
+    CreditStatus newStatus,
+    String? reason,
+    int? userId,
+  ) async {
+    final db = await database;
+
+    await db.transaction((txn) async {
+      // Récupérer l'ancien statut
+      final oldStatusResult = await txn.query(
+        'credit_contracts',
+        columns: ['status'],
+        where: 'id = ?',
+        whereArgs: [contractId],
+      );
+
+      if (oldStatusResult.isNotEmpty) {
+        final oldStatus = oldStatusResult.first['status'] as String;
+
+        // Mettre à jour le statut du contrat
+        await txn.update(
+          'credit_contracts',
+          {'status': newStatus.name},
+          where: 'id = ?',
+          whereArgs: [contractId],
+        );
+
+        // Ajouter à l'historique
+        await txn.insert('credit_status_history', {
+          'credit_contract_id': contractId,
+          'old_status': oldStatus,
+          'new_status': newStatus.name,
+          'reason': reason,
+          'user_id': userId,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    });
+  }
+
+  // ==================== MÉTHODES ÉCHÉANCES ====================
+  Future<List<CreditInstallment>> getContractInstallments(
+    int contractId,
+  ) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'credit_installments',
+      where: 'credit_contract_id = ?',
+      whereArgs: [contractId],
+      orderBy: 'installment_number',
+    );
+    return maps.map((map) => CreditInstallment.fromMap(map)).toList();
+  }
+
+  Future<List<CreditInstallment>> getDueInstallments({
+    DateTime? dueDate,
+  }) async {
+    final db = await database;
+    final targetDate = dueDate ?? DateTime.now();
+
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT ci.*, 
+             cc.contract_number,
+             c.name as customer_name,
+             c.phone as customer_phone
+      FROM credit_installments ci
+      LEFT JOIN credit_contracts cc ON ci.credit_contract_id = cc.id
+      LEFT JOIN customers c ON cc.customer_id = c.id
+      WHERE ci.due_date <= ? AND ci.status IN ('en_attente', 'partiel', 'en_retard')
+      ORDER BY ci.due_date
+    ''',
+      [targetDate.toIso8601String().split('T')[0]],
+    );
+
+    return maps.map((map) => CreditInstallment.fromMap(map)).toList();
+  }
+
+  Future<List<CreditInstallment>> getOverdueInstallments() async {
+    final db = await database;
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
+    final List<Map<String, dynamic>> maps = await db.rawQuery(
+      '''
+      SELECT ci.*, 
+             cc.contract_number,
+             c.name as customer_name,
+             c.phone as customer_phone
+      FROM credit_installments ci
+      LEFT JOIN credit_contracts cc ON ci.credit_contract_id = cc.id
+      LEFT JOIN customers c ON cc.customer_id = c.id
+      WHERE ci.due_date < ? AND ci.status = 'en_attente'
+      ORDER BY ci.due_date
+    ''',
+      [today],
+    );
+
+    return maps.map((map) => CreditInstallment.fromMap(map)).toList();
+  }
+
+  Future<int> payInstallment(
+    int installmentId,
+    double amount,
+    PaymentMethod paymentMethod,
+    String? referenceNumber,
+    String? notes,
+    int? userId,
+  ) async {
+    final db = await database;
+    int paymentId = 0;
+
+    await db.transaction((txn) async {
+      // Récupérer l'échéance
+      final installmentResult = await txn.query(
+        'credit_installments',
+        where: 'id = ?',
+        whereArgs: [installmentId],
+      );
+
+      if (installmentResult.isEmpty) {
+        throw Exception('Échéance introuvable');
+      }
+
+      final installment = CreditInstallment.fromMap(installmentResult.first);
+      final newPaidAmount = installment.paidAmount + amount;
+      final newRemainingAmount = installment.amount - newPaidAmount;
+
+      // Déterminer le nouveau statut
+      InstallmentStatus newStatus;
+      if (newRemainingAmount <= 0) {
+        newStatus = InstallmentStatus.paye;
+      } else if (installment.paidAmount == 0) {
+        newStatus = InstallmentStatus.partiel;
+      } else {
+        newStatus = InstallmentStatus.partiel;
+      }
+
+      // Mettre à jour l'échéance
+      await txn.update(
+        'credit_installments',
+        {
+          'paid_amount': newPaidAmount,
+          'remaining_amount': newRemainingAmount > 0 ? newRemainingAmount : 0,
+          'status': newStatus.name,
+          'payment_date': newStatus == InstallmentStatus.paye
+              ? DateTime.now().toIso8601String()
+              : null,
+          'payment_method': newStatus == InstallmentStatus.paye
+              ? paymentMethod.name
+              : null,
+        },
+        where: 'id = ?',
+        whereArgs: [installmentId],
+      );
+
+      // Enregistrer le paiement
+      paymentId = await txn.insert('installment_payments', {
+        'installment_id': installmentId,
+        'amount': amount,
+        'payment_method': paymentMethod.name,
+        'payment_date': DateTime.now().toIso8601String(),
+        'reference_number': referenceNumber,
+        'notes': notes,
+        'user_id': userId,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      // Vérifier si toutes les échéances du contrat sont payées
+      await _updateContractStatusIfNeeded(txn, installment.creditContractId);
+    });
+
+    return paymentId;
+  }
+
+  Future<void> _updateContractStatusIfNeeded(
+    Transaction txn,
+    int contractId,
+  ) async {
+    final pendingInstallments = await txn.query(
+      'credit_installments',
+      where: 'credit_contract_id = ? AND status != ?',
+      whereArgs: [contractId, 'paye'],
+    );
+
+    if (pendingInstallments.isEmpty) {
+      // Toutes les échéances sont payées, marquer le contrat comme terminé
+      await txn.update(
+        'credit_contracts',
+        {'status': CreditStatus.termine.name},
+        where: 'id = ?',
+        whereArgs: [contractId],
+      );
+    }
+  }
+
+  Future<void> markOverdueInstallments() async {
+    final db = await database;
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
+    await db.transaction((txn) async {
+      // Marquer les échéances en retard
+      await txn.rawUpdate(
+        '''
+        UPDATE credit_installments 
+        SET status = ? 
+        WHERE due_date < ? AND status = ?
+      ''',
+        [
+          InstallmentStatus.enRetard.name,
+          today,
+          InstallmentStatus.enAttente.name,
+        ],
+      );
+
+      // Marquer les contrats en retard
+      await txn.rawUpdate(
+        '''
+        UPDATE credit_contracts 
+        SET status = ? 
+        WHERE id IN (
+          SELECT DISTINCT credit_contract_id 
+          FROM credit_installments 
+          WHERE status = ?
+        ) AND status = ?
+      ''',
+        [
+          CreditStatus.enRetard.name,
+          InstallmentStatus.enRetard.name,
+          CreditStatus.actif.name,
+        ],
+      );
+    });
+  }
+
+  Future<List<InstallmentPayment>> getInstallmentPayments(
+    int installmentId,
+  ) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'installment_payments',
+      where: 'installment_id = ?',
+      whereArgs: [installmentId],
+      orderBy: 'payment_date DESC',
+    );
+    return maps.map((map) => InstallmentPayment.fromMap(map)).toList();
+  }
+
   // ==================== MÉTHODES PARAMÈTRES ====================
   Future<List<PrinterSettings>> getAllPrinterSettings() async {
     final db = await database;
@@ -1072,6 +1935,33 @@ class DatabaseHelper {
       WHERE payment_status IN ('impaye', 'partiel')
     ''');
 
+    // Contrats de crédit actifs
+    final activeCreditContracts = await db.rawQuery('''
+      SELECT COUNT(*) as count, COALESCE(SUM(financed_amount), 0) as total
+      FROM credit_contracts 
+      WHERE status = 'actif'
+    ''');
+
+    // Échéances dues aujourd'hui
+    final todayInstallments = await db.rawQuery(
+      '''
+      SELECT COUNT(*) as count, COALESCE(SUM(remaining_amount), 0) as total
+      FROM credit_installments 
+      WHERE due_date = ? AND status IN ('en_attente', 'partiel')
+    ''',
+      [today.toIso8601String().split('T')[0]],
+    );
+
+    // Échéances en retard
+    final overdueInstallments = await db.rawQuery(
+      '''
+      SELECT COUNT(*) as count, COALESCE(SUM(remaining_amount), 0) as total
+      FROM credit_installments 
+      WHERE due_date < ? AND status IN ('en_attente', 'en_retard', 'partiel')
+    ''',
+      [today.toIso8601String().split('T')[0]],
+    );
+
     // Produits les plus vendus ce mois
     final topProducts = await db.rawQuery(
       '''
@@ -1095,6 +1985,12 @@ class DatabaseHelper {
       'lowStockCount': lowStock.first['count'],
       'unpaidInvoicesCount': unpaidInvoices.first['count'],
       'unpaidInvoicesTotal': unpaidInvoices.first['total'],
+      'activeCreditContractsCount': activeCreditContracts.first['count'],
+      'activeCreditContractsTotal': activeCreditContracts.first['total'],
+      'todayInstallmentsCount': todayInstallments.first['count'],
+      'todayInstallmentsTotal': todayInstallments.first['total'],
+      'overdueInstallmentsCount': overdueInstallments.first['count'],
+      'overdueInstallmentsTotal': overdueInstallments.first['total'],
       'topProducts': topProducts,
     };
   }
@@ -1126,7 +2022,8 @@ class DatabaseHelper {
         SUM(total_amount) as total_sales,
         AVG(total_amount) as average_sale,
         SUM(CASE WHEN payment_status = 'paye' THEN total_amount ELSE 0 END) as paid_sales,
-        SUM(CASE WHEN payment_status IN ('impaye', 'partiel') THEN remaining_amount ELSE 0 END) as pending_amount
+        SUM(CASE WHEN payment_status IN ('impaye', 'partiel') THEN remaining_amount ELSE 0 END) as pending_amount,
+        SUM(CASE WHEN is_credit_sale = 1 THEN total_amount ELSE 0 END) as credit_sales
       FROM invoices 
       WHERE created_at >= ? AND created_at <= ? 
         AND invoice_type = 'vente' 
@@ -1163,12 +2060,14 @@ class DatabaseHelper {
         p.name,
         p.brand,
         p.sell_price,
+        p.credit_price,
         p.cost_price,
         c.name as category_name,
         SUM(ii.quantity) as quantity_sold,
         SUM(ii.total_price) as total_revenue,
         SUM(ii.quantity * COALESCE(p.cost_price, 0)) as total_cost,
-        SUM(ii.total_price - (ii.quantity * COALESCE(p.cost_price, 0))) as total_profit
+        SUM(ii.total_price - (ii.quantity * COALESCE(p.cost_price, 0))) as total_profit,
+        SUM(CASE WHEN ii.is_credit_sale = 1 THEN ii.total_price ELSE 0 END) as credit_sales_revenue
       FROM invoice_items ii
       JOIN invoices i ON ii.invoice_id = i.id
       JOIN products p ON ii.product_id = p.id
@@ -1176,7 +2075,7 @@ class DatabaseHelper {
       WHERE i.created_at >= ? AND i.created_at <= ? 
         AND i.payment_status != 'annule'
         $whereClause
-      GROUP BY p.id, p.name, p.brand, p.sell_price, p.cost_price, c.name
+      GROUP BY p.id, p.name, p.brand, p.sell_price, p.credit_price, p.cost_price, c.name
       ORDER BY quantity_sold DESC
     ''', whereArgs);
 
@@ -1194,6 +2093,7 @@ class DatabaseHelper {
         p.quantity,
         p.min_stock_alert,
         p.sell_price,
+        p.credit_price,
         p.cost_price,
         c.name as category_name,
         p.quantity * COALESCE(p.cost_price, 0) as stock_value,
@@ -1223,7 +2123,8 @@ class DatabaseHelper {
       SELECT 
         SUM(total_amount) as total_revenue,
         SUM(CASE WHEN payment_status = 'paye' THEN total_amount ELSE 0 END) as paid_revenue,
-        SUM(remaining_amount) as pending_revenue
+        SUM(remaining_amount) as pending_revenue,
+        SUM(CASE WHEN is_credit_sale = 1 THEN total_amount ELSE 0 END) as credit_revenue
       FROM invoices 
       WHERE created_at >= ? AND created_at <= ? 
         AND invoice_type = 'vente' 
@@ -1261,6 +2162,20 @@ class DatabaseHelper {
       [startDate.toIso8601String(), endDate.toIso8601String()],
     );
 
+    // Paiements d'échéances
+    final installmentPayments = await db.rawQuery(
+      '''
+      SELECT 
+        payment_method,
+        COUNT(*) as transaction_count,
+        SUM(amount) as total_amount
+      FROM installment_payments
+      WHERE payment_date >= ? AND payment_date <= ?
+      GROUP BY payment_method
+    ''',
+      [startDate.toIso8601String(), endDate.toIso8601String()],
+    );
+
     final totalRevenue = (revenue.first['total_revenue'] ?? 0) as num;
     final totalCost = (costs.first['total_cost'] ?? 0) as num;
     final totalProfit = totalRevenue - totalCost;
@@ -1269,10 +2184,82 @@ class DatabaseHelper {
       'totalRevenue': totalRevenue,
       'paidRevenue': revenue.first['paid_revenue'] ?? 0,
       'pendingRevenue': revenue.first['pending_revenue'] ?? 0,
+      'creditRevenue': revenue.first['credit_revenue'] ?? 0,
       'totalCost': totalCost,
       'totalProfit': totalProfit,
       'profitMargin': totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0,
       'paymentMethods': paymentMethods,
+      'installmentPayments': installmentPayments,
+    };
+  }
+
+  Future<Map<String, dynamic>> getCreditReport({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    final db = await database;
+
+    // Statistiques générales des contrats
+    final contractStats = await db.rawQuery(
+      '''
+      SELECT 
+        COUNT(*) as total_contracts,
+        SUM(total_amount) as total_contract_amount,
+        SUM(financed_amount) as total_financed_amount,
+        SUM(down_payment) as total_down_payments,
+        AVG(duration_months) as average_duration,
+        COUNT(CASE WHEN status = 'actif' THEN 1 END) as active_contracts,
+        COUNT(CASE WHEN status = 'termine' THEN 1 END) as completed_contracts,
+        COUNT(CASE WHEN status = 'en_retard' THEN 1 END) as overdue_contracts,
+        COUNT(CASE WHEN status = 'annule' THEN 1 END) as cancelled_contracts
+      FROM credit_contracts 
+      WHERE created_at >= ? AND created_at <= ?
+    ''',
+      [startDate.toIso8601String(), endDate.toIso8601String()],
+    );
+
+    // Collecte des échéances
+    final installmentStats = await db.rawQuery(
+      '''
+      SELECT 
+        COUNT(*) as total_installments,
+        SUM(amount) as total_installment_amount,
+        SUM(paid_amount) as total_collected,
+        SUM(remaining_amount) as total_outstanding,
+        COUNT(CASE WHEN status = 'paye' THEN 1 END) as paid_installments,
+        COUNT(CASE WHEN status = 'en_retard' THEN 1 END) as overdue_installments,
+        COUNT(CASE WHEN status = 'partiel' THEN 1 END) as partial_installments
+      FROM credit_installments ci
+      JOIN credit_contracts cc ON ci.credit_contract_id = cc.id
+      WHERE cc.created_at >= ? AND cc.created_at <= ?
+    ''',
+      [startDate.toIso8601String(), endDate.toIso8601String()],
+    );
+
+    // Clients avec le plus de crédit
+    final topCreditCustomers = await db.rawQuery(
+      '''
+      SELECT 
+        c.name as customer_name,
+        COUNT(cc.id) as contract_count,
+        SUM(cc.financed_amount) as total_credit,
+        SUM(CASE WHEN cc.status = 'actif' THEN cc.financed_amount ELSE 0 END) as active_credit
+      FROM credit_contracts cc
+      JOIN customers c ON cc.customer_id = c.id
+      WHERE cc.created_at >= ? AND cc.created_at <= ?
+      GROUP BY c.id, c.name
+      ORDER BY total_credit DESC
+      LIMIT 10
+    ''',
+      [startDate.toIso8601String(), endDate.toIso8601String()],
+    );
+
+    return {
+      'contractStats': contractStats.isNotEmpty ? contractStats.first : {},
+      'installmentStats': installmentStats.isNotEmpty
+          ? installmentStats.first
+          : {},
+      'topCreditCustomers': topCreditCustomers,
     };
   }
 
@@ -1291,6 +2278,10 @@ class DatabaseHelper {
       'payments',
       'prescriptions',
       'stock_movements',
+      'credit_contracts',
+      'credit_installments',
+      'installment_payments',
+      'credit_status_history',
       'printer_settings',
       'print_templates',
     ];
@@ -1316,6 +2307,10 @@ class DatabaseHelper {
       await db.transaction((txn) async {
         // Vider les tables existantes (sauf configuration)
         final tablesToClear = [
+          'installment_payments',
+          'credit_status_history',
+          'credit_installments',
+          'credit_contracts',
           'stock_movements',
           'invoice_items',
           'payments',
@@ -1371,7 +2366,14 @@ class DatabaseHelper {
 
   Future<Map<String, int>> getTableCounts() async {
     final db = await database;
-    final tables = ['users', 'categories', 'products', 'customers', 'invoices'];
+    final tables = [
+      'users',
+      'categories',
+      'products',
+      'customers',
+      'invoices',
+      'credit_contracts',
+    ];
     Map<String, int> counts = {};
 
     for (String table in tables) {
@@ -1393,6 +2395,17 @@ class DatabaseHelper {
       where: 'created_at < ?',
       whereArgs: [oneYearAgo.toIso8601String()],
     );
+
+    // Nettoyer l'historique des statuts de crédit (garder 2 ans)
+    final twoYearsAgo = DateTime.now().subtract(const Duration(days: 730));
+    await db.delete(
+      'credit_status_history',
+      where: 'created_at < ?',
+      whereArgs: [twoYearsAgo.toIso8601String()],
+    );
+
+    // Marquer les échéances en retard
+    await markOverdueInstallments();
 
     // Optimiser la base de données
     await db.execute('ANALYZE');
@@ -1442,6 +2455,156 @@ class DatabaseHelper {
       );
     }
 
+    // Vérifier les contrats de crédit incohérents
+    final creditInconsistencies = await db.rawQuery('''
+      SELECT cc.contract_number
+      FROM credit_contracts cc
+      WHERE cc.total_amount != (cc.down_payment + cc.financed_amount)
+    ''');
+
+    if (creditInconsistencies.isNotEmpty) {
+      errors.add(
+        '${creditInconsistencies.length} contrat(s) de crédit avec incohérence de montants',
+      );
+    }
+
+    // Vérifier les échéances orphelines
+    final orphanInstallments = await db.rawQuery('''
+      SELECT COUNT(*) as count
+      FROM credit_installments ci
+      LEFT JOIN credit_contracts cc ON ci.credit_contract_id = cc.id
+      WHERE cc.id IS NULL
+    ''');
+
+    if ((orphanInstallments.first['count'] as int) > 0) {
+      errors.add(
+        '${orphanInstallments.first['count']} échéance(s) orpheline(s)',
+      );
+    }
+
     return errors;
+  }
+
+  // ==================== MÉTHODES DE NOTIFICATION ====================
+  Future<List<Map<String, dynamic>>> getPendingNotifications() async {
+    final db = await database;
+    final today = DateTime.now();
+    final tomorrow = today.add(const Duration(days: 1));
+    final nextWeek = today.add(const Duration(days: 7));
+
+    List<Map<String, dynamic>> notifications = [];
+
+    // Échéances dues aujourd'hui
+    final todayInstallments = await db.rawQuery(
+      '''
+      SELECT 
+        'installment_due' as type,
+        ci.id,
+        cc.contract_number,
+        c.name as customer_name,
+        c.phone as customer_phone,
+        ci.amount,
+        ci.due_date,
+        'Échéance due aujourd''hui' as message
+      FROM credit_installments ci
+      JOIN credit_contracts cc ON ci.credit_contract_id = cc.id
+      JOIN customers c ON cc.customer_id = c.id
+      WHERE ci.due_date = ? AND ci.status IN ('en_attente', 'partiel')
+    ''',
+      [today.toIso8601String().split('T')[0]],
+    );
+
+    notifications.addAll(
+      todayInstallments.map((row) => Map<String, dynamic>.from(row)),
+    );
+
+    // Échéances dues demain
+    final tomorrowInstallments = await db.rawQuery(
+      '''
+      SELECT 
+        'installment_due_t
+        ci.id,
+        cc.contract_number,
+        c.name as customer_name,
+        c.phone as customer_phone,
+        ci.amount,
+        ci.due_date,
+        'Échéance due demain' as message
+      FROM credit_installments ci
+      JOIN credit_contracts cc ON ci.credit_contract_id = cc.id
+      JOIN customers c ON cc.customer_id = c.id
+      WHERE ci.due_date = ? AND ci.status IN ('en_attente', 'partiel')
+    ''',
+      [tomorrow.toIso8601String().split('T')[0]],
+    );
+
+    notifications.addAll(
+      tomorrowInstallments.map((row) => Map<String, dynamic>.from(row)),
+    );
+
+    // Échéances en retard
+    final overdueInstallments = await db.rawQuery(
+      '''
+      SELECT 
+        'installment_overdue' as type,
+        ci.id,
+        cc.contract_number,
+        c.name as customer_name,
+        c.phone as customer_phone,
+        ci.amount,
+        ci.due_date,
+        'Échéance en retard' as message
+      FROM credit_installments ci
+      JOIN credit_contracts cc ON ci.credit_contract_id = cc.id
+      JOIN customers c ON cc.customer_id = c.id
+      WHERE ci.due_date < ? AND ci.status IN ('en_attente', 'en_retard', 'partiel')
+    ''',
+      [today.toIso8601String().split('T')[0]],
+    );
+
+    notifications.addAll(
+      overdueInstallments.map((row) => Map<String, dynamic>.from(row)),
+    );
+
+    // Contrats se terminant bientôt (dans la semaine)
+    final endingSoonContracts = await db.rawQuery(
+      '''
+      SELECT 
+        'contract_ending_soon' as type,
+        cc.id,
+        cc.contract_number,
+        c.name as customer_name,
+        c.phone as customer_phone,
+        cc.end_date,
+        'Contrat se termine bientôt' as message
+      FROM credit_contracts cc
+      JOIN customers c ON cc.customer_id = c.id
+      WHERE cc.end_date <= ? AND cc.status = 'actif'
+    ''',
+      [nextWeek.toIso8601String().split('T')[0]],
+    );
+
+    notifications.addAll(
+      endingSoonContracts.map((row) => Map<String, dynamic>.from(row)),
+    );
+
+    // Stock bas
+    final lowStockProducts = await db.rawQuery('''
+      SELECT 
+        'low_stock' as type,
+        p.id,
+        p.name as product_name,
+        p.quantity,
+        p.min_stock_alert,
+        'Stock bas' as message
+      FROM products p
+      WHERE p.is_active = 1 AND p.quantity <= p.min_stock_alert
+    ''');
+
+    notifications.addAll(
+      lowStockProducts.map((row) => Map<String, dynamic>.from(row)),
+    );
+
+    return notifications;
   }
 }

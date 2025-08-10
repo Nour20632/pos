@@ -24,7 +24,7 @@ class ReportService extends ChangeNotifier {
     }
 
     _isLoading = true;
-    notifyListeners();
+    // notifyListeners(); // <-- REMOVE or COMMENT OUT this line
 
     try {
       final stats = await _databaseHelper.getDashboardStats();

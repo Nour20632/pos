@@ -6,8 +6,6 @@ import 'package:jiffy/jiffy.dart';
 import 'package:mk_optique/database.dart';
 import 'package:mk_optique/models.dart';
 import 'package:mk_optique/optical_models.dart';
-import 'package:mk_optique/simple_optical_database(1).dart';
-
 class CreateOpticalOrderScreen extends StatefulWidget {
   final Customer? selectedCustomer;
   final Prescription? selectedPrescription;

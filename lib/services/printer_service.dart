@@ -1,6 +1,5 @@
 // ==================== SERVICE D'IMPRESSION USB SMART AMÉLIORÉ ====================
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -38,8 +37,8 @@ class UsbPrinterService extends ChangeNotifier {
 
       // Filtrage des imprimantes thermiques et Smart
       List<UsbDevice> printers = devices.where((device) {
-        String productName = (device.productName ?? '').toLowerCase();
-        String manufacturerName = (device.manufacturerName ?? '').toLowerCase();
+        String productName = device.productName?.toLowerCase() ?? '';
+        String manufacturerName = device.manufacturerName?.toLowerCase() ?? '';
 
         // Critères de détection pour imprimantes Smart et thermiques
         return productName.contains('smart') ||
@@ -64,7 +63,7 @@ class UsbPrinterService extends ChangeNotifier {
       debugPrint('🖨️ Imprimantes USB trouvées: ${printers.length}');
       for (var printer in printers) {
         debugPrint(
-          '  📄 ${printer.productName} (VID: ${printer.vid?.toRadixString(16)?.toUpperCase() ?? 'N/A'}, PID: ${printer.pid?.toRadixString(16)?.toUpperCase() ?? 'N/A'})',
+          '  📄 ${printer.productName} (VID: ${printer.vid?.toRadixString(16).toUpperCase() ?? 'N/A'}, PID: ${printer.pid?.toRadixString(16).toUpperCase() ?? 'N/A'})',
         );
       }
 
@@ -321,11 +320,7 @@ class UsbPrinterService extends ChangeNotifier {
 
       // Date d'impression
       String dateStr =
-          DateTime.now().day.toString().padLeft(2, '0') +
-          '/' +
-          DateTime.now().month.toString().padLeft(2, '0') +
-          '/' +
-          DateTime.now().year.toString();
+          '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}';
       bytes.addAll(_encodeText('Imprimé le: $dateStr'));
       bytes.addAll([0x0A, 0x0A, 0x0A]); // Espaces finaux
 
@@ -463,7 +458,7 @@ class UsbPrinterService extends ChangeNotifier {
         bytes.addAll([0x0A]);
         bytes.addAll(
           _encodeText(
-            '  ${itemQuantity} x ${itemPrice.toStringAsFixed(2)} DA = ${totalItem.toStringAsFixed(2)} DA',
+            '  $itemQuantity x ${itemPrice.toStringAsFixed(2)} DA = ${totalItem.toStringAsFixed(2)} DA',
           ),
         );
         bytes.addAll([0x0A]);
@@ -619,21 +614,7 @@ class UsbPrinterService extends ChangeNotifier {
   /// Vérification si la facture concerne l'optique
   bool _isOpticalInvoice(models.Invoice invoice) {
     for (var item in invoice.items) {
-      bool hasPrescription = false;
-      final prescription = item.hasPrescription;
-
-      if (prescription != null) {
-        if (prescription is bool) {
-          hasPrescription = prescription;
-        } else if (prescription is int) {
-          hasPrescription = prescription == 1;
-        } else if (prescription is String) {
-          hasPrescription =
-              prescription.toLowerCase() == 'true' || prescription == '1';
-        }
-      }
-
-      if (hasPrescription) return true;
+      if (item.hasPrescription == true) return true;
     }
     return false;
   }
@@ -673,8 +654,8 @@ class UsbPrinterService extends ChangeNotifier {
       'isPrinting': _isPrinting,
       'deviceName': _connectedDevice?.productName ?? 'Aucune',
       'manufacturerName': _connectedDevice?.manufacturerName ?? 'Inconnu',
-      'vid': _connectedDevice?.vid?.toRadixString(16)?.toUpperCase() ?? '0000',
-      'pid': _connectedDevice?.pid?.toRadixString(16)?.toUpperCase() ?? '0000',
+      'vid': _connectedDevice?.vid?.toRadixString(16).toUpperCase() ?? '0000',
+      'pid': _connectedDevice?.pid?.toRadixString(16).toUpperCase() ?? '0000',
       'printerType': 'Imprimante thermique USB Smart',
       'lastError': _lastError,
       'connectionTime': _isConnected ? DateTime.now().toString() : null,
@@ -687,15 +668,15 @@ class UsbPrinterService extends ChangeNotifier {
       'name': device.productName ?? 'Périphérique USB',
       'productName': device.productName ?? 'Inconnu',
       'manufacturerName': device.manufacturerName ?? 'Inconnu',
-      'vid': device.vid?.toRadixString(16)?.toUpperCase() ?? '0000',
-      'pid': device.pid?.toRadixString(16)?.toUpperCase() ?? '0000',
+      'vid': device.vid?.toRadixString(16).toUpperCase() ?? '0000',
+      'pid': device.pid?.toRadixString(16).toUpperCase() ?? '0000',
       'macAdress': '', // USB n'utilise pas d'adresse MAC
       'type': 'USB',
     };
   }
 
   /// Méthode pour imprimer un produit (compatibilité)
-  Future<bool> printBarcode(dynamic product) async {
+  Future<bool> printProductBarcode(dynamic product) async {
     if (product is models.Product) {
       return await printBarcode(
         product.barcode ?? '',

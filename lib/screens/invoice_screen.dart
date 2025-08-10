@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:jiffy/jiffy.dart';
 import 'package:provider/provider.dart';
 
@@ -22,16 +23,25 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Factures'),
-        backgroundColor: Colors.blue.shade800,
+        title: const Text('Liste des Factures'),
+        backgroundColor: const Color(0xFF1E3A8A),
         foregroundColor: Colors.white,
+        elevation: 0,
+        leading: context.canPop()
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              )
+            : null,
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list),
+            tooltip: 'Filtrer',
             onPressed: _showFilterDialog,
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Actualiser',
             onPressed: () => context.read<InvoiceService>().loadInvoices(),
           ),
         ],
@@ -44,8 +54,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, '/sale/new'),
-        backgroundColor: Colors.blue.shade800,
+        onPressed: () => context.push('/sale/new'),
+        backgroundColor: const Color(0xFF1E3A8A),
+        tooltip: 'Nouvelle Vente',
         child: const Icon(Icons.add),
       ),
     );
@@ -178,9 +189,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ListTile(
-        onTap: () =>
-            Navigator.pushNamed(context, '/invoices/detail/${invoice.id}'),
+        onTap: () => context.push('/invoices/detail/${invoice.id}'),
         leading: CircleAvatar(
           backgroundColor: statusColor.withOpacity(0.2),
           child: Icon(Icons.receipt, color: statusColor),
@@ -264,7 +275,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               leading: const Icon(Icons.payment),
               title: const Text('Statut de paiement'),
               onTap: () {
-                Navigator.pop(context);
+                context.pop();
                 _showStatusFilterDialog();
               },
             ),
@@ -272,7 +283,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               leading: const Icon(Icons.date_range),
               title: const Text('Période'),
               onTap: () {
-                Navigator.pop(context);
+                context.pop();
                 _showDateRangeDialog();
               },
             ),
@@ -286,12 +297,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 _startDate = null;
                 _endDate = null;
               });
-              Navigator.pop(context);
+              context.pop();
             },
             child: const Text('Réinitialiser'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => context.pop(),
             child: const Text('Fermer'),
           ),
         ],
@@ -306,7 +317,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         title: const Text('Filtrer par statut'),
         children: PaymentStatus.values.map((status) {
           return SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, status),
+            onPressed: () => context.pop(status),
             child: Text(_getStatusText(status)),
           );
         }).toList(),

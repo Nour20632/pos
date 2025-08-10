@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:jiffy/jiffy.dart';
 import 'package:mk_optique/database.dart';
+import 'package:mk_optique/models.dart';
 import 'package:mk_optique/optical_models.dart';
+import 'package:mk_optique/screens/create_optical_order_screen.dart';
+import 'package:mk_optique/screens/invoice_detail_screen.dart';
 import 'package:mk_optique/services/printer_service.dart';
 
 class OpticalOrdersScreen extends StatefulWidget {
-  const OpticalOrdersScreen({Key? key}) : super(key: key);
+  const OpticalOrdersScreen({super.key});
 
   @override
   State<OpticalOrdersScreen> createState() => _OpticalOrdersScreenState();
@@ -18,7 +21,7 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
     with SingleTickerProviderStateMixin {
   final DatabaseHelper _db = DatabaseHelper();
   final UsbPrinterService _printerService = UsbPrinterService();
-  
+
   late TabController _tabController;
   List<OpticalOrder> _allOrders = [];
   List<OpticalOrder> _filteredOrders = [];
@@ -49,14 +52,14 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
 
   Future<void> _loadOrders() async {
     setState(() => _isLoading = true);
-    
+
     try {
       _allOrders = await _db.getAllOpticalOrders();
       _filterOrders();
     } catch (e) {
       _showErrorSnackBar('Erreur de chargement: $e');
     }
-    
+
     setState(() => _isLoading = false);
   }
 
@@ -64,7 +67,9 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
     if (_selectedStatus == 'tous') {
       _filteredOrders = List.from(_allOrders);
     } else {
-      _filteredOrders = _allOrders.where((order) => order.status == _selectedStatus).toList();
+      _filteredOrders = _allOrders
+          .where((order) => order.status == _selectedStatus)
+          .toList();
     }
     setState(() {});
   }
@@ -79,6 +84,18 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
+  }
+
+  void _navigateToInvoiceDetails(OpticalOrder order) {
+    if (order.invoiceId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              InvoiceDetailScreen(invoiceId: order.invoiceId!),
+        ),
+      );
+    }
   }
 
   @override
@@ -104,24 +121,23 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
             icon: const Icon(Icons.add),
             onPressed: () => _createNewOrder(),
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadOrders,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadOrders),
         ],
       ),
       body: Column(
         children: [
           // Filtres
           _buildFilters(),
-          
+
           // Liste des commandes
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
                 _buildOrdersList(_allOrders),
-                _buildOrdersList(_allOrders.where((o) => o.isInProgress).toList()),
+                _buildOrdersList(
+                  _allOrders.where((o) => o.isInProgress).toList(),
+                ),
                 _buildOrdersList(_allOrders.where((o) => o.isReady).toList()),
               ],
             ),
@@ -145,7 +161,10 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
               decoration: const InputDecoration(
                 labelText: 'Filtrer par statut',
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
               ),
               items: _statusOptions.map((status) {
                 return DropdownMenuItem<String>(
@@ -252,9 +271,9 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
                   _buildStatusChip(order.status),
                 ],
               ),
-              
+
               const SizedBox(height: 12),
-              
+
               // Informations principales
               Row(
                 children: [
@@ -265,7 +284,11 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
                         if (order.frameReference != null) ...[
                           Row(
                             children: [
-                              Icon(Icons.grid_view, size: 16, color: Colors.grey.shade600),
+                              Icon(
+                                Icons.grid_view,
+                                size: 16,
+                                color: Colors.grey.shade600,
+                              ),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -280,7 +303,11 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
                         if (order.lensType != null) ...[
                           Row(
                             children: [
-                              Icon(Icons.lens, size: 16, color: Colors.grey.shade600),
+                              Icon(
+                                Icons.lens,
+                                size: 16,
+                                color: Colors.grey.shade600,
+                              ),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -327,7 +354,7 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
                   ),
                 ],
               ),
-              
+
               // Date de livraison et actions
               const SizedBox(height: 12),
               Row(
@@ -336,17 +363,23 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
                     child: Row(
                       children: [
                         Icon(
-                          Icons.schedule, 
-                          size: 16, 
-                          color: order.isOverdue ? Colors.red : Colors.grey.shade600,
+                          Icons.schedule,
+                          size: 16,
+                          color: order.isOverdue
+                              ? Colors.red
+                              : Colors.grey.shade600,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Livraison: ${order.estimatedDelivery != null ? Jiffy.parseFromDateTime(order.estimatedDelivery!).format(pattern: 'dd/MM/yyyy') : 'Non définie'}',
                           style: TextStyle(
                             fontSize: 13,
-                            color: order.isOverdue ? Colors.red : Colors.grey.shade600,
-                            fontWeight: order.isOverdue ? FontWeight.w500 : FontWeight.normal,
+                            color: order.isOverdue
+                                ? Colors.red
+                                : Colors.grey.shade600,
+                            fontWeight: order.isOverdue
+                                ? FontWeight.w500
+                                : FontWeight.normal,
                           ),
                         ),
                       ],
@@ -365,7 +398,8 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
                           ],
                         ),
                       ),
-                      if (order.status != 'livre' && order.status != 'annule') ...[
+                      if (order.status != 'livre' &&
+                          order.status != 'annule') ...[
                         const PopupMenuItem(
                           value: 'edit_price',
                           child: Row(
@@ -493,11 +527,9 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
   Future<void> _createNewOrder() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => const CreateOpticalOrderScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const CreateOpticalOrderScreen()),
     );
-    
+
     if (result == true) {
       _loadOrders();
     }
@@ -581,7 +613,7 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
       if (order.invoiceId == null) {
         await _createInvoiceForOrder(order);
       }
-      
+
       // Imprimer la facture
       final invoice = await _db.getInvoiceById(order.invoiceId!);
       if (invoice != null) {
@@ -589,7 +621,9 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
         if (success) {
           _showSuccessSnackBar('Facture imprimée avec succès');
         } else {
-          _showErrorSnackBar('Erreur d\'impression: ${_printerService.lastError}');
+          _showErrorSnackBar(
+            'Erreur d\'impression: ${_printerService.lastError}',
+          );
         }
       }
     } catch (e) {
@@ -600,7 +634,7 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
   Future<void> _createInvoiceForOrder(OpticalOrder order) async {
     final invoiceNumber = await _db.generateInvoiceNumber();
     final currentUser = await _getCurrentUser();
-    
+
     final invoice = Invoice(
       invoiceNumber: invoiceNumber,
       customerId: order.customerId,
@@ -608,33 +642,47 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
       customerPhone: order.customerPhone,
       invoiceType: InvoiceType.vente,
       paymentType: PaymentType.comptant,
-      totalAmount: order.finalPrice > 0 ? order.finalPrice : order.estimatedPrice,
+      totalAmount: order.finalPrice > 0
+          ? order.finalPrice
+          : order.estimatedPrice,
       paidAmount: 0,
-      remainingAmount: order.finalPrice > 0 ? order.finalPrice : order.estimatedPrice,
+      remainingAmount: order.finalPrice > 0
+          ? order.finalPrice
+          : order.estimatedPrice,
       paymentStatus: PaymentStatus.impaye,
       userId: currentUser?.id,
       createdAt: DateTime.now(),
     );
 
+    // Insert invoice first to get the invoiceId
+    final invoiceId = await _db.insertInvoice(invoice, []);
+
     final invoiceItems = [
       InvoiceItem(
-        productName: 'Lunettes optiques - ${order.frameReference ?? "Cadre sélectionné"}',
+        invoiceId: invoiceId,
+        productName:
+            'Lunettes optiques - ${order.frameReference ?? "Cadre sélectionné"}',
         quantity: 1,
-        unitPrice: order.finalPrice > 0 ? order.finalPrice : order.estimatedPrice,
-        totalPrice: order.finalPrice > 0 ? order.finalPrice : order.estimatedPrice,
+        unitPrice: order.finalPrice > 0
+            ? order.finalPrice
+            : order.estimatedPrice,
+        totalPrice: order.finalPrice > 0
+            ? order.finalPrice
+            : order.estimatedPrice,
         hasPrescription: order.prescriptionId != null,
       ),
     ];
 
-    final invoiceId = await _db.insertInvoice(invoice, invoiceItems);
     
     // Mettre à jour la commande avec l'ID de la facture
-    await _db.database.then((db) => db.update(
-      'optical_orders',
-      {'invoice_id': invoiceId},
-      where: 'id = ?',
-      whereArgs: [order.id],
-    ));
+    await _db.database.then(
+      (db) => db.update(
+        'optical_orders',
+        {'invoice_id': invoiceId},
+        where: 'id = ?',
+        whereArgs: [order.id],
+      ),
+    );
   }
 
   Future<User?> _getCurrentUser() async {
@@ -648,14 +696,14 @@ class _OpticalOrdersScreenState extends State<OpticalOrdersScreen>
 class OrderDetailsDialog extends StatelessWidget {
   final OpticalOrder order;
 
-  const OrderDetailsDialog({Key? key, required this.order}) : super(key: key);
+  const OrderDetailsDialog({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
       child: Container(
         width: MediaQuery.of(context).size.width * 0.9,
-        maxHeight: MediaQuery.of(context).size.height * 0.8,
+        height: MediaQuery.of(context).size.height * 0.8,
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -681,9 +729,9 @@ class OrderDetailsDialog extends StatelessWidget {
                 ),
               ],
             ),
-            
+
             const Divider(),
-            
+
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
@@ -693,38 +741,66 @@ class OrderDetailsDialog extends StatelessWidget {
                     _buildInfoSection('Informations Générales', [
                       _buildInfoRow('Numéro', order.orderNumber),
                       _buildInfoRow('Client', order.customerName ?? 'Inconnu'),
-                      _buildInfoRow('Téléphone', order.customerPhone ?? 'Non renseigné'),
+                      _buildInfoRow(
+                        'Téléphone',
+                        order.customerPhone ?? 'Non renseigné',
+                      ),
                       _buildInfoRow('Statut', order.statusDisplayName),
-                      _buildInfoRow('Date de commande', 
-                          Jiffy.parseFromDateTime(order.orderDate).format(pattern: 'dd/MM/yyyy')),
+                      _buildInfoRow(
+                        'Date de commande',
+                        Jiffy.parseFromDateTime(
+                          order.orderDate,
+                        ).format(pattern: 'dd/MM/yyyy'),
+                      ),
                     ]),
-                    
+
                     const SizedBox(height: 16),
-                    
+
                     // Détails produit
                     _buildInfoSection('Détails du Produit', [
-                      _buildInfoRow('Référence cadre', order.frameReference ?? 'Non spécifiée'),
-                      _buildInfoRow('Type de verres', order.lensType ?? 'Non spécifié'),
-                      if (order.specialNotes != null && order.specialNotes!.isNotEmpty)
+                      _buildInfoRow(
+                        'Référence cadre',
+                        order.frameReference ?? 'Non spécifiée',
+                      ),
+                      _buildInfoRow(
+                        'Type de verres',
+                        order.lensType ?? 'Non spécifié',
+                      ),
+                      if (order.specialNotes != null &&
+                          order.specialNotes!.isNotEmpty)
                         _buildInfoRow('Notes spéciales', order.specialNotes!),
                     ]),
-                    
+
                     const SizedBox(height: 16),
-                    
+
                     // Prix et dates
                     _buildInfoSection('Prix et Échéances', [
                       if (order.estimatedPrice > 0)
-                        _buildInfoRow('Prix estimé', '${order.estimatedPrice.toStringAsFixed(0)} DA'),
+                        _buildInfoRow(
+                          'Prix estimé',
+                          '${order.estimatedPrice.toStringAsFixed(0)} DA',
+                        ),
                       if (order.finalPrice > 0)
-                        _buildInfoRow('Prix final', '${order.finalPrice.toStringAsFixed(0)} DA'),
+                        _buildInfoRow(
+                          'Prix final',
+                          '${order.finalPrice.toStringAsFixed(0)} DA',
+                        ),
                       if (order.estimatedDelivery != null)
-                        _buildInfoRow('Livraison estimée', 
-                            Jiffy.parseFromDateTime(order.estimatedDelivery!).format(pattern: 'dd/MM/yyyy')),
+                        _buildInfoRow(
+                          'Livraison estimée',
+                          Jiffy.parseFromDateTime(
+                            order.estimatedDelivery!,
+                          ).format(pattern: 'dd/MM/yyyy'),
+                        ),
                       if (order.completionDate != null)
-                        _buildInfoRow('Date d\'achèvement', 
-                            Jiffy.parseFromDateTime(order.completionDate!).format(pattern: 'dd/MM/yyyy')),
+                        _buildInfoRow(
+                          'Date d\'achèvement',
+                          Jiffy.parseFromDateTime(
+                            order.completionDate!,
+                          ).format(pattern: 'dd/MM/yyyy'),
+                        ),
                     ]),
-                    
+
                     // Prescription si disponible
                     if (order.odSphere != null || order.osSphere != null) ...[
                       const SizedBox(height: 16),
@@ -734,9 +810,9 @@ class OrderDetailsDialog extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Boutons d'action
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -759,10 +835,7 @@ class OrderDetailsDialog extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Container(
@@ -795,9 +868,7 @@ class OrderDetailsDialog extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),
-          Expanded(
-            child: Text(value),
-          ),
+          Expanded(child: Text(value)),
         ],
       ),
     );
@@ -805,29 +876,41 @@ class OrderDetailsDialog extends StatelessWidget {
 
   Widget _buildPrescriptionSection() {
     return _buildInfoSection('Prescription Médicale', [
-      if (order.odSphere != null || order.odCylinder != null || order.odAxis != null)
-        _buildInfoRow('OD (Œil Droit)', 
-            'SPH: ${order.odSphere?.toStringAsFixed(2) ?? "/"} '
-            'CYL: ${order.odCylinder?.toStringAsFixed(2) ?? "/"} '
-            'AXE: ${order.odAxis ?? "/"}°'),
-      
-      if (order.osSphere != null || order.osCylinder != null || order.osAxis != null)
-        _buildInfoRow('OS (Œil Gauche)', 
-            'SPH: ${order.osSphere?.toStringAsFixed(2) ?? "/"} '
-            'CYL: ${order.osCylinder?.toStringAsFixed(2) ?? "/"} '
-            'AXE: ${order.osAxis ?? "/"}°'),
-      
+      if (order.odSphere != null ||
+          order.odCylinder != null ||
+          order.odAxis != null)
+        _buildInfoRow(
+          'OD (Œil Droit)',
+          'SPH: ${order.odSphere?.toStringAsFixed(2) ?? "/"} '
+              'CYL: ${order.odCylinder?.toStringAsFixed(2) ?? "/"} '
+              'AXE: ${order.odAxis ?? "/"}°',
+        ),
+
+      if (order.osSphere != null ||
+          order.osCylinder != null ||
+          order.osAxis != null)
+        _buildInfoRow(
+          'OS (Œil Gauche)',
+          'SPH: ${order.osSphere?.toStringAsFixed(2) ?? "/"} '
+              'CYL: ${order.osCylinder?.toStringAsFixed(2) ?? "/"} '
+              'AXE: ${order.osAxis ?? "/"}°',
+        ),
+
       if (order.odAdd != null || order.osAdd != null)
-        _buildInfoRow('Addition', 
-            'OD: ${order.odAdd?.toStringAsFixed(2) ?? "/"} '
-            'OS: ${order.osAdd?.toStringAsFixed(2) ?? "/"}'),
-      
+        _buildInfoRow(
+          'Addition',
+          'OD: ${order.odAdd?.toStringAsFixed(2) ?? "/"} '
+              'OS: ${order.osAdd?.toStringAsFixed(2) ?? "/"}',
+        ),
+
       if (order.pdTotal != null)
         _buildInfoRow('Distance pupillaire', '${order.pdTotal} mm'),
-      
+
       if (order.pdRight != null && order.pdLeft != null)
-        _buildInfoRow('DP séparée', 
-            'Droite: ${order.pdRight} mm, Gauche: ${order.pdLeft} mm'),
+        _buildInfoRow(
+          'DP séparée',
+          'Droite: ${order.pdRight} mm, Gauche: ${order.pdLeft} mm',
+        ),
     ]);
   }
 }
@@ -839,10 +922,10 @@ class EditPriceDialog extends StatefulWidget {
   final Function(double finalPrice, double? costPrice) onPriceUpdated;
 
   const EditPriceDialog({
-    Key? key,
+    super.key,
     required this.order,
     required this.onPriceUpdated,
-  }) : super(key: key);
+  });
 
   @override
   State<EditPriceDialog> createState() => _EditPriceDialogState();
@@ -857,12 +940,12 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
   void initState() {
     super.initState();
     _finalPriceController = TextEditingController(
-      text: widget.order.finalPrice > 0 
+      text: widget.order.finalPrice > 0
           ? widget.order.finalPrice.toStringAsFixed(0)
           : widget.order.estimatedPrice.toStringAsFixed(0),
     );
     _costPriceController = TextEditingController(
-      text: widget.order.costPrice > 0 
+      text: widget.order.costPrice > 0
           ? widget.order.costPrice.toStringAsFixed(0)
           : '',
     );
@@ -886,13 +969,10 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
           children: [
             Text(
               'Commande: ${widget.order.orderNumber}',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
             ),
             const SizedBox(height: 16),
-            
+
             TextFormField(
               controller: _finalPriceController,
               keyboardType: TextInputType.number,
@@ -916,9 +996,9 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
                 return null;
               },
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             TextFormField(
               controller: _costPriceController,
               keyboardType: TextInputType.number,
@@ -947,7 +1027,7 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
               final costPrice = _costPriceController.text.isNotEmpty
                   ? double.parse(_costPriceController.text)
                   : null;
-              
+
               widget.onPriceUpdated(finalPrice, costPrice);
               Navigator.pop(context);
             }
@@ -966,10 +1046,10 @@ class ChangeStatusDialog extends StatefulWidget {
   final Function(String newStatus, String? notes) onStatusChanged;
 
   const ChangeStatusDialog({
-    Key? key,
+    super.key,
     required this.order,
     required this.onStatusChanged,
-  }) : super(key: key);
+  });
 
   @override
   State<ChangeStatusDialog> createState() => _ChangeStatusDialogState();
@@ -980,11 +1060,36 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
   final _notesController = TextEditingController();
 
   final List<Map<String, dynamic>> _statusOptions = [
-    {'value': 'nouveau', 'label': 'Nouveau', 'icon': Icons.fiber_new, 'color': Colors.blue},
-    {'value': 'en_cours', 'label': 'En cours', 'icon': Icons.work, 'color': Colors.orange},
-    {'value': 'pret', 'label': 'Prêt', 'icon': Icons.check_circle, 'color': Colors.green},
-    {'value': 'livre', 'label': 'Livré', 'icon': Icons.done_all, 'color': Colors.grey},
-    {'value': 'annule', 'label': 'Annulé', 'icon': Icons.cancel, 'color': Colors.red},
+    {
+      'value': 'nouveau',
+      'label': 'Nouveau',
+      'icon': Icons.fiber_new,
+      'color': Colors.blue,
+    },
+    {
+      'value': 'en_cours',
+      'label': 'En cours',
+      'icon': Icons.work,
+      'color': Colors.orange,
+    },
+    {
+      'value': 'pret',
+      'label': 'Prêt',
+      'icon': Icons.check_circle,
+      'color': Colors.green,
+    },
+    {
+      'value': 'livre',
+      'label': 'Livré',
+      'icon': Icons.done_all,
+      'color': Colors.grey,
+    },
+    {
+      'value': 'annule',
+      'label': 'Annulé',
+      'icon': Icons.cancel,
+      'color': Colors.red,
+    },
   ];
 
   @override
@@ -1009,19 +1114,16 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
         children: [
           Text(
             'Commande: ${widget.order.orderNumber}',
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 14,
-            ),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
           ),
           const SizedBox(height: 16),
-          
+
           const Text(
             'Nouveau statut:',
             style: TextStyle(fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
-          
+
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1032,11 +1134,18 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
                   setState(() => _selectedStatus = option['value']);
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
-                    color: isSelected ? option['color'].withOpacity(0.2) : Colors.grey.shade100,
+                    color: isSelected
+                        ? option['color'].withOpacity(0.2)
+                        : Colors.grey.shade100,
                     border: Border.all(
-                      color: isSelected ? option['color'] : Colors.grey.shade300,
+                      color: isSelected
+                          ? option['color']
+                          : Colors.grey.shade300,
                       width: isSelected ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(20),
@@ -1047,14 +1156,20 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
                       Icon(
                         option['icon'],
                         size: 16,
-                        color: isSelected ? option['color'] : Colors.grey.shade600,
+                        color: isSelected
+                            ? option['color']
+                            : Colors.grey.shade600,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         option['label'],
                         style: TextStyle(
-                          color: isSelected ? option['color'] : Colors.grey.shade600,
-                          fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+                          color: isSelected
+                              ? option['color']
+                              : Colors.grey.shade600,
+                          fontWeight: isSelected
+                              ? FontWeight.w500
+                              : FontWeight.normal,
                         ),
                       ),
                     ],
@@ -1063,9 +1178,9 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
               );
             }).toList(),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           TextField(
             controller: _notesController,
             maxLines: 3,
@@ -1084,7 +1199,10 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            widget.onStatusChanged(_selectedStatus, _notesController.text.trim());
+            widget.onStatusChanged(
+              _selectedStatus,
+              _notesController.text.trim(),
+            );
             Navigator.pop(context);
           },
           child: const Text('Confirmer'),
@@ -1118,10 +1236,7 @@ class _ChangeStatusDialogState extends State<ChangeStatusDialog> {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Container(
